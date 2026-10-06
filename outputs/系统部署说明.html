@@ -1,0 +1,318 @@
+<!doctype html>
+<!-- 作者：EasonShu -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DayPilot · 系统部署说明</title>
+  <style>
+    :root{
+      --bg:#f6f8fb;--panel:#fff;--ink:#0f172a;--sub:#475569;--muted:#94a3b8;
+      --line:#e2e8f0;--blue:#2563eb;--cyan:#06b6d4;--green:#059669;
+      --amber:#b45309;--rose:#e11d48;--radius:14px;
+      --mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+      --shadow:0 18px 50px -34px rgba(15,23,42,.5);
+    }
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{
+      margin:0;color:var(--ink);
+      font-family:"Inter","Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+      line-height:1.7;
+      background:
+        linear-gradient(rgba(37,99,235,.035) 1px,transparent 1px),
+        linear-gradient(90deg,rgba(37,99,235,.035) 1px,transparent 1px),
+        radial-gradient(circle at 12% 0%,rgba(37,99,235,.08),transparent 28%),
+        radial-gradient(circle at 88% 8%,rgba(6,182,212,.08),transparent 30%),
+        var(--bg);
+      background-size:42px 42px,42px 42px,100% 100%,100% 100%,100% 100%;
+      -webkit-font-smoothing:antialiased;
+    }
+    code,.k,pre{font-family:var(--mono)}
+    .wrap{max-width:1120px;margin:0 auto;padding:0 22px}
+    .topbar{
+      position:sticky;top:0;z-index:20;background:rgba(255,255,255,.82);
+      border-bottom:1px solid rgba(226,232,240,.85);backdrop-filter:blur(18px) saturate(1.1);
+    }
+    .topbar .wrap{height:58px;display:flex;align-items:center;justify-content:space-between;gap:18px}
+    .brand{display:flex;align-items:center;gap:10px;font-weight:850}
+    .brand-mark{
+      width:32px;height:32px;border-radius:10px;
+      background:url("./static/assets/logo-daypilot-512.png?v=1") center/cover no-repeat,#eff6ff;
+      box-shadow:0 10px 22px -16px rgba(37,99,235,.8);flex:none;
+    }
+    nav{display:flex;align-items:center;gap:4px;overflow:auto}
+    nav a,.toc-card a{
+      flex:none;text-decoration:none;color:#64748b;font-size:13px;font-weight:750;
+      padding:7px 10px;border-radius:9px;
+    }
+    nav a:hover,nav a.active,.toc-card a:hover,.toc-card a.active{color:#1d4ed8;background:#eff6ff}
+    header.hero{padding:46px 0 28px}
+    .hero-grid{display:grid;grid-template-columns:minmax(0,1.2fr) 360px;gap:22px;align-items:stretch}
+    .hero-card,.quick-card,.section{
+      background:rgba(255,255,255,.9);border:1px solid rgba(226,232,240,.9);
+      border-radius:22px;box-shadow:var(--shadow),inset 0 1px 0 rgba(255,255,255,.82);
+      backdrop-filter:blur(14px);
+    }
+    .hero-card{padding:34px}
+    .eyebrow{
+      display:inline-flex;align-items:center;gap:8px;height:28px;padding:0 11px;
+      border-radius:999px;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;
+      font-size:12px;font-weight:850;
+    }
+    .eyebrow::before{content:"";width:7px;height:7px;border-radius:3px;background:#22d3ee;box-shadow:0 0 0 4px rgba(34,211,238,.16)}
+    h1{margin:18px 0 10px;font-size:42px;line-height:1.08;font-weight:900}
+    .lead{max-width:720px;margin:0;color:var(--sub);font-size:16px}
+    .chips{display:flex;flex-wrap:wrap;gap:9px;margin-top:22px}
+    .chip{
+      display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;
+      border:1px solid var(--line);border-radius:999px;background:#fff;color:#475569;
+      font-size:12px;font-weight:750;
+    }
+    .chip b{color:#0f172a}
+    .quick-card{padding:20px}
+    .quick-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+    .quick-title h2{margin:0;font-size:16px;font-weight:900}
+    .tag{font-size:11px;font-weight:850;border-radius:999px;padding:3px 8px;background:#ecfdf5;color:#047857;border:1px solid #bbf7d0}
+    .mini-list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+    .mini-list li{display:grid;grid-template-columns:22px 1fr;gap:9px;align-items:start;color:#475569;font-size:13px}
+    .mini-list b{color:#0f172a}
+    .num{width:22px;height:22px;border-radius:7px;background:#2563eb;color:#fff;display:grid;place-items:center;font-size:12px;font-weight:900}
+    main{padding:0 0 54px}
+    .layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:22px;align-items:start}
+    aside.toc{position:sticky;top:78px}
+    .toc-card{padding:14px;border-radius:18px;background:rgba(255,255,255,.78);border:1px solid rgba(226,232,240,.9)}
+    .toc-card a{display:block}
+    .content{display:grid;gap:16px}
+    .section{padding:24px;scroll-margin-top:80px}
+    .section h2{margin:0 0 12px;font-size:20px;line-height:1.2;font-weight:900;display:flex;align-items:center;gap:10px}
+    .section h2::before{content:"";width:4px;height:20px;border-radius:99px;background:linear-gradient(180deg,var(--blue),var(--cyan))}
+    .section h3{margin:20px 0 8px;font-size:15px;font-weight:900;color:#1e293b}
+    .section p{margin:8px 0;color:#475569}
+    .grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+    .card{border:1px solid var(--line);border-radius:14px;background:#fff;padding:14px}
+    .card h3{margin:0 0 6px}.card p{font-size:13px;margin:0}
+    .steps{display:grid;gap:10px;counter-reset:step;margin-top:12px}
+    .step{counter-increment:step;display:grid;grid-template-columns:34px 1fr;gap:12px;border:1px solid var(--line);border-radius:14px;background:#fff;padding:14px}
+    .step::before{content:counter(step);width:34px;height:34px;border-radius:10px;background:#eff6ff;color:#1d4ed8;display:grid;place-items:center;font-weight:900;border:1px solid #bfdbfe}
+    .step b{display:block;margin-bottom:2px}.step span{display:block;color:#64748b;font-size:13px}
+    .callout{margin:12px 0;padding:12px 14px;border-radius:14px;border:1px solid #bfdbfe;background:#eff6ff;color:#1e3a8a;font-size:13px}
+    .callout strong{color:#1d4ed8}.callout.warn{background:#fffbeb;border-color:#fde68a;color:#78350f}.callout.warn strong{color:#b45309}
+    .callout.danger{background:#fff1f2;border-color:#fecdd3;color:#881337}.callout.danger strong{color:#be123c}
+    .k{display:inline-block;background:#f8fafc;border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:#334155;font-size:.92em;white-space:nowrap}
+    .cmd{margin:12px 0;border-radius:14px;overflow:hidden;background:#0f172a;border:1px solid #1e293b}
+    .cmd-head{min-height:36px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 10px 7px 14px;background:#111827;border-bottom:1px solid #263244}
+    .cmd-label{font-size:11px;color:#94a3b8;font-weight:850;letter-spacing:.04em;text-transform:uppercase}
+    .copy{border:1px solid #334155;background:#1e293b;color:#cbd5e1;height:24px;padding:0 9px;border-radius:7px;font-size:12px;font-weight:800;cursor:pointer}
+    .copy:hover,.copy.done{background:#2563eb;border-color:#2563eb;color:#fff}
+    pre{margin:0;padding:14px 16px;overflow:auto;color:#e2e8f0;font-size:13px;line-height:1.65;white-space:pre}
+    pre .c{color:#7dd3fc}
+    table{width:100%;border-collapse:separate;border-spacing:0;margin:10px 0;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff}
+    th,td{padding:10px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line);font-size:13px}
+    th{background:#f8fafc;color:#334155;font-weight:900}tr:last-child td{border-bottom:0}td{color:#475569}
+    ul.clean{margin:8px 0;padding-left:18px;color:#475569}ul.clean li{margin:6px 0}
+    .footer{padding:0 0 40px;color:#94a3b8;font-size:12px;text-align:center}
+    @media (max-width:900px){
+      .hero-grid,.layout{grid-template-columns:1fr}aside.toc{position:static}.toc-card{display:flex;overflow:auto;gap:4px}.toc-card a{flex:none}h1{font-size:34px}
+    }
+    @media (max-width:640px){
+      .wrap{padding:0 14px}.topbar .wrap{height:auto;min-height:56px;align-items:flex-start;flex-direction:column;padding-top:10px;padding-bottom:10px}
+      .hero-card,.quick-card,.section{border-radius:18px;padding:18px}.grid-2,.grid-3{grid-template-columns:1fr}h1{font-size:29px}nav{width:100%}
+    }
+    @media print{body{background:#fff}.topbar,aside.toc,.copy{display:none}.layout,.hero-grid{display:block}.section,.hero-card,.quick-card{box-shadow:none;break-inside:avoid}}
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="wrap">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>DayPilot 部署说明</span></div>
+      <nav aria-label="顶部导航">
+        <a href="#quick">快速开始</a><a href="#prepare">准备</a><a href="#install">安装</a><a href="#first-login">首次登录</a><a href="#ops">运维</a><a href="#faq">排错</a>
+      </nav>
+    </div>
+  </div>
+
+  <header class="hero">
+    <div class="wrap hero-grid">
+      <section class="hero-card">
+        <span class="eyebrow">服务器部署手册</span>
+        <h1>把 DayPilot 跑到服务器上</h1>
+        <p class="lead">传整个 <span class="k">outputs/</span>，执行安装脚本，打开网页导入账号。日常维护账号、时间计划、消息通知都在网页里完成。</p>
+        <div class="chips">
+          <span class="chip"><b>Python</b> 标准库</span><span class="chip"><b>SQLite</b> 本地数据</span><span class="chip"><b>systemd</b> 守护进程</span><span class="chip"><b>无需</b> crontab</span>
+        </div>
+      </section>
+      <aside class="quick-card">
+        <div class="quick-title"><h2>部署只看这四步</h2><span class="tag">推荐</span></div>
+        <ol class="mini-list">
+          <li><span class="num">1</span><span><b>本机</b> 上传整个 <span class="k">outputs/</span></span></li>
+          <li><span class="num">2</span><span><b>服务器</b> 执行 <span class="k">deploy/install.sh</span></span></li>
+          <li><span class="num">3</span><span><b>安全组</b> 放行端口并登录</span></li>
+          <li><span class="num">4</span><span><b>网页</b> 上传凭据、配置计划与通知</span></li>
+        </ol>
+      </aside>
+    </div>
+  </header>
+
+  <main class="wrap layout">
+    <aside class="toc">
+      <div class="toc-card">
+        <a href="#quick">快速开始</a><a href="#prepare">部署前准备</a><a href="#install">上传与安装</a><a href="#first-login">首次登录</a><a href="#accounts">账号导入</a><a href="#data">数据与备份</a><a href="#ops">运维命令</a><a href="#faq">常见问题</a>
+      </div>
+    </aside>
+
+    <div class="content">
+      <section id="quick" class="section">
+        <h2>快速开始</h2>
+        <p>本机上传，服务器安装。不要直接把源码传进最终安装目录。</p>
+        <div class="cmd"><div class="cmd-head"><span class="cmd-label">本机执行</span><button class="copy" type="button">复制</button></div><pre><span class="c"># 先传到临时目录</span>
+scp -r "./outputs/." root@服务器IP:/opt/checkinops-src/</pre></div>
+        <div class="cmd"><div class="cmd-head"><span class="cmd-label">服务器执行</span><button class="copy" type="button">复制</button></div><pre>cd /opt/checkinops-src
+sudo sh deploy/install.sh
+
+<span class="c"># 放行端口：二选一，云服务器还要放行安全组</span>
+sudo firewall-cmd --add-port=8000/tcp --permanent &amp;&amp; sudo firewall-cmd --reload
+sudo ufw allow 8000/tcp</pre></div>
+        <div class="callout warn"><strong>重点：</strong><span class="k">outputs/.</span> 末尾的 <span class="k">/.</span> 建议保留，避免多套一层目录导致安装脚本找不到 <span class="k">server.py</span>。</div>
+      </section>
+
+      <section id="prepare" class="section">
+        <h2>部署前准备</h2>
+        <div class="grid-2">
+          <div class="card"><h3>服务器要求</h3><p>Linux + systemd，Python 3.6 以上，开放一个 HTTP 端口，默认 <span class="k">8000</span>。</p></div>
+          <div class="card"><h3>上传内容</h3><p>上传整个 <span class="k">outputs/</span>。它包含服务端、前端、签到脚本和部署脚本。</p></div>
+        </div>
+        <div class="callout danger"><strong>不要把开发数据带上线：</strong>首次安装脚本会清理源码里的 <span class="k">data/dailyhub.sqlite3</span> 和 <span class="k">data/users/</span>。手动部署也要先删掉它们。</div>
+        <h3>上线前建议</h3>
+        <ul class="clean">
+          <li>首次启动前，先改 <span class="k">outputs/data/workbench.json</span> 的 <span class="k">auth.username</span> / <span class="k">auth.password</span>。</li>
+          <li>凭据文件是账号令牌，上传后删除本机临时副本，不要提交到 Git。</li>
+          <li>公网访问建议加 Nginx / Caddy 反向代理和 HTTPS；开启 HTTPS 后再在 systemd 单元里设 <span class="k">DASHBOARD_COOKIE_SECURE=1</span>。</li>
+          <li>若位于反向代理之后，把 <span class="k">workbench.json</span> 的 <span class="k">rate_limit.proxy</span> 设为 <span class="k">true</span>，限流才会读到真实客户端 IP（默认 8 次/分 登录、180 次/分 API，超限返回 429）。</li>
+          <li>注册后 24 小时未上传凭据的账号会被自动删除以节省空间（可用 <span class="k">PURGE_NO_CREDENTIAL_HOURS</span> 调整，单位小时）。</li>
+        </ul>
+        <div class="callout"><strong>应用层加解密默认开启：</strong>HTTP 请求/响应的读写体使用 HMAC-SHA256 流加密封包，密钥自动生成在 <span class="k">data/workbench.json</span> 的 <span class="k">app_secret</span>。http 走前端内置的纯 JS 镜像算法，HTTPS 走原生 WebCrypto，两者可互通；把它关掉可设 <span class="k">crypto.enabled=false</span>。真正的传输机密性仍需 HTTPS 提供。</div>
+      </section>
+
+      <section id="install" class="section">
+        <h2>上传与安装</h2>
+        <div class="steps">
+          <div class="step"><div><b>上传目录</b><span>把 <span class="k">outputs/</span> 放到服务器临时目录，例如 <span class="k">/opt/checkinops-src</span>。</span></div></div>
+          <div class="step"><div><b>执行安装</b><span>脚本会复制代码、创建运行用户、写入 systemd 服务并启动。</span></div></div>
+          <div class="step"><div><b>放行端口</b><span>系统防火墙和云安全组都要放行同一个端口。</span></div></div>
+          <div class="step"><div><b>确认状态</b><span>用 <span class="k">systemctl status checkinops</span> 或浏览器访问面板。</span></div></div>
+        </div>
+        <h3>安装变量</h3>
+        <table>
+          <thead><tr><th>变量</th><th>用途</th><th>默认值</th></tr></thead>
+          <tbody>
+            <tr><td><span class="k">APP_DIR</span></td><td>安装目录</td><td><span class="k">/opt/checkinops</span></td></tr>
+            <tr><td><span class="k">APP_USER</span></td><td>运行用户</td><td><span class="k">checkin</span></td></tr>
+            <tr><td><span class="k">PY</span></td><td>Python 解释器</td><td><span class="k">/usr/bin/python3</span></td></tr>
+            <tr><td><span class="k">DASHBOARD_PORT</span></td><td>网页端口</td><td><span class="k">8000</span></td></tr>
+          </tbody>
+        </table>
+        <div class="cmd"><div class="cmd-head"><span class="cmd-label">自定义安装示例</span><button class="copy" type="button">复制</button></div><pre>sudo APP_DIR=/opt/checkinops APP_USER=checkin DASHBOARD_PORT=8000 sh deploy/install.sh</pre></div>
+      </section>
+
+      <section id="first-login" class="section">
+        <h2>首次登录</h2>
+        <p>安装完成后访问：</p>
+        <div class="cmd"><div class="cmd-head"><span class="cmd-label">浏览器地址</span><button class="copy" type="button">复制</button></div><pre>http://服务器IP:8000</pre></div>
+        <div class="callout warn"><strong>管理员密码只在首次启动时播种一次。</strong>首次启动后再改 <span class="k">workbench.json</span> 不会自动改数据库里的密码。</div>
+        <h3>默认执行计划</h3>
+        <table>
+          <thead><tr><th>产品</th><th>每日签到</th><th>轮询补签（3 次）</th></tr></thead>
+          <tbody>
+            <tr><td>WorkBuddy</td><td><span class="k">00:05</span></td><td><span class="k">05:00</span> / <span class="k">12:00</span> / <span class="k">20:00</span></td></tr>
+            <tr><td>TRAE</td><td><span class="k">00:35</span></td><td><span class="k">05:30</span> / <span class="k">12:30</span> / <span class="k">20:30</span></td></tr>
+          </tbody>
+        </table>
+        <p>TRAE 整体比 WorkBuddy 晚 30 分钟错峰运行；时区默认 <span class="k">Asia/Shanghai</span>，可用 <span class="k">DASHBOARD_TZ</span> 覆盖。用户可在「时间计划」页按需调整。</p>
+        <h3>已经启动过，还想重置管理员</h3>
+        <div class="cmd"><div class="cmd-head"><span class="cmd-label">重置管理员，会清掉注册用户</span><button class="copy" type="button">复制</button></div><pre>sudo systemctl stop checkinops
+sudo nano /opt/checkinops/data/workbench.json
+sudo rm -f /opt/checkinops/data/dailyhub.sqlite3
+sudo systemctl start checkinops</pre></div>
+      </section>
+
+      <section id="accounts" class="section">
+        <h2>账号导入</h2>
+        <div class="grid-3">
+          <div class="card"><h3>1. 下载工具</h3><p>登录页右侧提供 WorkBuddy / TRAE 凭据导出工具。</p></div>
+          <div class="card"><h3>2. 本机导出</h3><p>在对应客户端所在机器运行工具，生成凭据文件。</p></div>
+          <div class="card"><h3>3. 网页上传</h3><p>进入 DayPilot，点击添加账号，上传凭据文件。</p></div>
+        </div>
+        <div class="callout"><strong>TRAE 注意：</strong>TRAE 会校验机器码，凭据导出工具要在实际签到机器上运行。</div>
+      </section>
+
+      <section id="data" class="section">
+        <h2>数据与备份</h2>
+        <p>重复执行安装脚本是安全的，它会保留服务器运行中产生的数据。</p>
+        <table>
+          <thead><tr><th>路径</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td><span class="k">data/workbench.json</span></td><td>默认配置与首次管理员播种来源</td></tr>
+            <tr><td><span class="k">data/dailyhub.sqlite3</span></td><td>用户、角色、审核状态、密码哈希</td></tr>
+            <tr><td><span class="k">data/users/</span></td><td>每个用户独立的凭据、日志、计划、通知</td></tr>
+            <tr><td><span class="k">archive/</span></td><td>归档账号</td></tr>
+            <tr><td><span class="k">runtime/</span></td><td>任务历史、运行日志、调度锁</td></tr>
+            <tr><td><span class="k">apps/*/sessions*</span></td><td>旧单用户凭据目录，管理员首次登录会继承</td></tr>
+          </tbody>
+        </table>
+        <div class="cmd"><div class="cmd-head"><span class="cmd-label">备份数据</span><button class="copy" type="button">复制</button></div><pre>sudo tar -czf daypilot-backup-$(date +%F).tgz \
+  -C /opt/checkinops \
+  data archive runtime apps/trae/trae-sessions apps/workbuddy/sessions</pre></div>
+      </section>
+
+      <section id="ops" class="section">
+        <h2>运维命令</h2>
+        <div class="grid-2">
+          <div class="cmd"><div class="cmd-head"><span class="cmd-label">服务状态</span><button class="copy" type="button">复制</button></div><pre>sudo systemctl status checkinops --no-pager</pre></div>
+          <div class="cmd"><div class="cmd-head"><span class="cmd-label">实时日志</span><button class="copy" type="button">复制</button></div><pre>sudo journalctl -u checkinops -f</pre></div>
+          <div class="cmd"><div class="cmd-head"><span class="cmd-label">重启服务</span><button class="copy" type="button">复制</button></div><pre>sudo systemctl restart checkinops</pre></div>
+          <div class="cmd"><div class="cmd-head"><span class="cmd-label">离线检查</span><button class="copy" type="button">复制</button></div><pre>cd /opt/checkinops
+python3 server.py --check</pre></div>
+        </div>
+        <div class="callout warn"><strong>不要配置旧 cron。</strong>DayPilot 已内置调度器。如果服务器还留着 <span class="k">/etc/cron.d/trae-signin</span> 或 <span class="k">workbuddy-signin</span>，请删除。</div>
+      </section>
+
+      <section id="faq" class="section">
+        <h2>常见问题</h2>
+        <table>
+          <thead><tr><th>现象</th><th>处理</th></tr></thead>
+          <tbody>
+            <tr><td>找不到 <span class="k">server.py</span></td><td>上传时多套了一层目录。确保 <span class="k">/opt/checkinops-src/server.py</span> 存在。</td></tr>
+            <tr><td>源码目录等于安装目录</td><td>不要在 <span class="k">/opt/checkinops</span> 里跑安装。先传到 <span class="k">/opt/checkinops-src</span>。</td></tr>
+            <tr><td>浏览器打不开</td><td>检查服务状态、系统防火墙、云安全组、监听端口。</td></tr>
+            <tr><td>登录失败</td><td>密码来自首次启动时的 <span class="k">workbench.json</span>。启动后改 JSON 不会生效。</td></tr>
+            <tr><td>注册账号不能登录</td><td>注册后默认待审核，管理员在“用户管理”里通过后才能登录。</td></tr>
+            <tr><td>到点没执行</td><td>确认服务在运行，产品计划已启用，服务器时区是 <span class="k">Asia/Shanghai</span>。</td></tr>
+            <tr><td>登录后一直提示过期</td><td>多半开了 <span class="k">DASHBOARD_COOKIE_SECURE=1</span> 但站点仍是 http，浏览器丢弃了 Cookie。要么关掉该变量，要么整站走 HTTPS。</td></tr>
+            <tr><td>操作频繁提示 429</td><td>触发 IP 限流。稍后重试，或按需调大 <span class="k">workbench.json</span> 的 <span class="k">rate_limit</span>。</td></tr>
+            <tr><td>注册的账号过一天没了</td><td>该账号注册后 24 小时内未上传任何凭据，被自动清理以节省空间。重新注册并在期限内上传即可。</td></tr>
+            <tr><td>同一分钟跑多次</td><td>清理多余 <span class="k">server.py</span> 实例和旧 cron。</td></tr>
+            <tr><td>通知关不掉</td><td>不要在 systemd 单元里设置 <span class="k">NOTIFY_CHANNEL</span> 这类环境变量。</td></tr>
+            <tr><td>TRAE 设备相关错误</td><td>回签到机器重新导出凭据并上传。TRAE 对机器码敏感。</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <p class="footer">DayPilot · 作者 EasonShu · 学习研究工具，欢迎技术交流与互相学习 · 更新日期 2026-10-06</p>
+    </div>
+  </main>
+
+  <script>
+    (function(){
+      function setDone(btn,text){var old=btn.textContent;btn.textContent=text;btn.classList.add("done");setTimeout(function(){btn.textContent=old;btn.classList.remove("done");},1300)}
+      function fallback(text,btn){var ta=document.createElement("textarea");ta.value=text;ta.setAttribute("readonly","");ta.style.position="fixed";ta.style.left="-9999px";document.body.appendChild(ta);ta.select();try{document.execCommand("copy");setDone(btn,"已复制")}catch(e){setDone(btn,"手动复制")}document.body.removeChild(ta)}
+      document.querySelectorAll(".cmd").forEach(function(box){var btn=box.querySelector(".copy");var pre=box.querySelector("pre");if(!btn||!pre)return;btn.addEventListener("click",function(){var text=pre.innerText.replace(/\u00a0/g," ");if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(text).then(function(){setDone(btn,"已复制")},function(){fallback(text,btn)})}else{fallback(text,btn)}})});
+      var links=Array.prototype.slice.call(document.querySelectorAll("nav a,.toc-card a"));
+      var targets=links.map(function(a){return document.querySelector(a.getAttribute("href"))});
+      function paint(){var y=window.scrollY+92;var id="";targets.forEach(function(t){if(t&&t.offsetTop<=y)id="#"+t.id});links.forEach(function(a){a.classList.toggle("active",a.getAttribute("href")===id)})}
+      window.addEventListener("scroll",paint,{passive:true});window.addEventListener("resize",paint);paint();
+    })();
+  </script>
+</body>
+</html>

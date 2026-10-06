@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# DayPilot runtime data: never commit real credentials, keys, databases, logs, or locks.
+outputs/data/**
+outputs/runtime/**
+outputs/archive/**
+
+# Credential/session stores
+outputs/apps/**/sessions/**
+outputs/apps/**/sessions.disabled/**
+outputs/apps/**/trae-sessions/**
+outputs/apps/**/trae-sessions.disabled/**
+outputs/apps/**/*.json.bak
+
+# Logs and generated state
+outputs/apps/**/logs/**
+outputs/apps/**/*.log
+outputs/apps/**/notify_state.json
+
+# Notification secrets
+outputs/apps/**/config/notify.json
+!outputs/apps/**/config/notify.example.json
+
+# Locally packaged binaries should be attached to GitHub Releases instead of committed.
+outputs/static/downloads/*.exe
+
+# Local/private agent state
+.workbuddy/
+

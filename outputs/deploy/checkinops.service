@@ -1,0 +1,51 @@
+[Unit]
+Description=CheckinOps 签到监控平台
+Documentation=file:///opt/checkinops/deploy/README.md
+# 要等网络就绪，否则开机瞬间的签到任务会拿到连不出去的 socket
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=checkin
+Group=checkin
+WorkingDirectory=/opt/checkinops
+
+# 端口、时区、缓冲都从这里控制 —— 改配置不用动代码。
+# PYTHONUNBUFFERED 必须开：不然 journalctl 里看到的是攒了一堆的输出。
+Environment=PYTHONUNBUFFERED=1
+Environment=DASHBOARD_TZ=Asia/Shanghai
+Environment=DASHBOARD_HOST=0.0.0.0
+Environment=DASHBOARD_PORT=8000
+
+# HTTPS 部署（前面挂了 nginx/caddy 终结 TLS 时）才打开：
+# 让 session cookie 带 Secure，浏览器只在 https 链路回传，防中间人窃取。
+# 纯 http / 本地调试务必保持关闭/不设，否则 cookie 会被浏览器直接丢弃而登录失效。
+# Environment=DASHBOARD_COOKIE_SECURE=1
+
+# ⚠️ 千万不要在这里设 NOTIFY_CHANNEL / WB_NOTIFY_CHANNEL 之类的变量。
+# notify.py 的配置优先级是「环境变量 > notify.json」，一旦设了，
+# 面板上的通知开关就再也管不住了（改了也不生效）。
+# 需要配置通知请走面板，或直接改 apps/*/config/notify.json。
+
+ExecStart=/usr/bin/python3 /opt/checkinops/server.py
+
+# 崩溃自动拉起。调度器跟着进程走，进程活着定时才在跑。
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=checkinops
+
+# 轻度加固：服务只碰得到自己的目录，误操作也伤不到系统
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/checkinops/data /opt/checkinops/runtime /opt/checkinops/apps /opt/checkinops/archive
+
+[Install]
+WantedBy=multi-user.target

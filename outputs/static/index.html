@@ -1,0 +1,536 @@
+<!doctype html>
+<!-- 作者：EasonShu -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>DayPilot · 自动签到工作台</title>
+  <script src="/vendor/tailwindcss.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'Segoe UI', '"PingFang SC"', '"Microsoft YaHei"', 'system-ui', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="icon" href="/assets/logo-daypilot-512.png?v=1" type="image/png">
+  <link rel="stylesheet" href="/styles.css?v=20261006-crypto-v12">
+</head>
+<body class="locked min-h-screen bg-slate-50 text-slate-900 font-sans antialiased">
+
+  <!-- ============================================================
+       登录屏
+       ============================================================ -->
+  <section id="loginScreen" class="login-screen min-h-screen flex items-center justify-center px-6 py-10 overflow-hidden">
+    <div class="login-shell">
+      <div class="login-card-wrap w-full max-w-md">
+      <div data-login-card class="relative bg-white/95 backdrop-blur-xl border border-slate-200/80 rounded-3xl shadow-2xl shadow-blue-900/10 p-10">
+        <div class="flex items-center gap-3 mb-8">
+          <span class="brand-mark"></span>
+          <div>
+            <strong class="block text-lg font-semibold tracking-tight text-slate-900">DayPilot</strong>
+            <small class="block text-xs text-slate-500 mt-0.5">自动签到工作台</small>
+          </div>
+        </div>
+
+        <div class="login-card-head">
+          <p class="login-eyebrow">安全控制台</p>
+          <h1>欢迎回来</h1>
+          <p>登录后维护账号、计划与通知。</p>
+        </div>
+
+        <form id="loginForm" autocomplete="on" class="auth-form">
+          <label class="auth-field">
+            <span class="auth-label">账号</span>
+            <span class="auth-control">
+              <svg class="auth-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/>
+              </svg>
+              <input class="auth-input" name="username" type="text" autocomplete="username" required placeholder="请输入账号 / 邮箱">
+            </span>
+          </label>
+          <label class="auth-field">
+            <span class="auth-label">密码</span>
+            <span class="auth-control has-action">
+              <svg class="auth-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+              </svg>
+              <input class="auth-input" name="password" type="password" autocomplete="current-password" required placeholder="请输入密码">
+              <button class="auth-field-action" type="button" data-toggle-password aria-label="显示密码" title="显示密码">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>
+                </svg>
+              </button>
+            </span>
+          </label>
+          <div class="auth-options">
+            <label class="auth-check">
+              <input type="checkbox" checked>
+              <span aria-hidden="true"></span>
+              <em>记住我</em>
+            </label>
+            <span class="auth-hint">注册账号需审核</span>
+          </div>
+          <button type="submit" data-state="idle" class="primary-btn auth-submit">
+            <span class="btn-label inline-flex items-center gap-2">
+              <span>登录</span>
+              <span class="arrow" aria-hidden="true">→</span>
+            </span>
+            <span class="spinner" aria-hidden="true" hidden></span>
+            <span class="check" aria-hidden="true" hidden>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+            </span>
+          </button>
+        </form>
+
+        <form id="registerForm" autocomplete="on" class="auth-form register-form" hidden>
+          <div class="auth-form-title">
+            <div>
+              <h2>申请新账号</h2>
+            </div>
+            <button id="showLogin" type="button" class="auth-link">返回登录</button>
+          </div>
+          <label class="auth-field">
+            <span class="auth-label">账号</span>
+            <span class="auth-control">
+              <svg class="auth-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/>
+              </svg>
+              <input class="auth-input" name="username" type="text" autocomplete="off" required
+                     pattern="[A-Za-z][A-Za-z0-9_]{2,15}"
+                     title="3-16 位，以英文字母开头，仅可含英文、数字、下划线"
+                     placeholder="字母开头，仅英文/数字/下划线">
+            </span>
+          </label>
+          <label class="auth-field">
+            <span class="auth-label">密码</span>
+            <span class="auth-control has-action">
+              <svg class="auth-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+              </svg>
+              <input class="auth-input" name="password" type="password" autocomplete="new-password" minlength="6" required placeholder="至少 6 位">
+              <button class="auth-field-action" type="button" data-toggle-password aria-label="显示密码" title="显示密码">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>
+                </svg>
+              </button>
+            </span>
+          </label>
+          <label class="auth-field">
+            <span class="auth-label">确认密码</span>
+            <span class="auth-control has-action">
+              <svg class="auth-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M20 6 9 17l-5-5"/><path d="M16 11v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h7"/>
+              </svg>
+              <input class="auth-input" name="confirm" type="password" autocomplete="new-password" minlength="6" required placeholder="再次输入密码">
+              <button class="auth-field-action" type="button" data-toggle-password aria-label="显示密码" title="显示密码">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>
+                </svg>
+              </button>
+            </span>
+          </label>
+          <button type="submit" class="secondary-btn auth-submit">提交注册</button>
+        </form>
+
+        <div class="auth-switch">
+          <span>没有账号？</span>
+          <button id="showRegister" type="button">申请注册</button>
+        </div>
+        <p id="loginMessage" class="login-message" hidden></p>
+        <p class="login-disclaimer">
+          本项目为作者的学习研究工具，旨在技术交流、互相学习，仅供参考。
+          登录即同意托管：凭据由本服务代管签到。可在「账号」中随时停用或删除撤回，请遵守平台规则与法律法规。
+        </p>
+        <p class="login-note login-note--warn">
+          注册后 24 小时内未上传凭据，账号将被自动删除以节省空间。
+        </p>
+      </div>
+      </div>
+
+      <aside class="login-showcase" aria-label="工具下载">
+        <i class="orb orb--cyan" aria-hidden="true"></i>
+        <i class="orb orb--blue" aria-hidden="true"></i>
+        <div class="showcase-topline">
+          <span class="showcase-chip"><i aria-hidden="true"></i> 安全访问入口</span>
+          <span class="showcase-version">版本 1.0.0</span>
+        </div>
+        <div class="showcase-copy">
+          <h2>账号凭据工具</h2>
+          <p>本机导出，上传托管，统一调度。</p>
+        </div>
+
+        <div class="login-downloads">
+          <a class="download-card" href="/downloads/workbuddy-credential-exporter.exe" download="WorkBuddy 凭据导出器.exe" aria-label="下载 WorkBuddy 凭据导出器">
+            <span class="download-icon">
+              <img src="/assets/product-workbuddy.webp" alt="">
+            </span>
+            <span class="download-text">
+              <strong>WorkBuddy 导出工具</strong>
+              <small>Windows 程序 · 生成凭据文件</small>
+              <small class="download-date">更新时间 2026-10-01</small>
+            </span>
+            <span class="download-action" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>
+              </svg>
+            </span>
+          </a>
+          <a class="download-card" href="/downloads/trae-credential-exporter.exe" download="TRAE 凭据导出器.exe" aria-label="下载 TRAE 凭据导出器">
+            <span class="download-icon">
+              <img src="/assets/product-trae.webp" alt="">
+            </span>
+            <span class="download-text">
+              <strong>TRAE 导出工具</strong>
+              <small>Windows 程序 · 需在签到机器运行</small>
+              <small class="download-date">更新时间 2026-10-01</small>
+            </span>
+            <span class="download-action" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>
+              </svg>
+            </span>
+          </a>
+        </div>
+
+        <p class="download-note">本机导出凭据后上传托管；仅限技术学习与研究，请遵守平台规则。</p>
+
+        <div class="login-guide" aria-label="使用指南">
+          <div class="guide-head">
+            <span>使用指南</span>
+            <small>4 步完成托管</small>
+          </div>
+          <ol class="guide-steps">
+            <li><b>1</b><span><strong>申请账号</strong><em>注册后等待管理员审核</em></span></li>
+            <li><b>2</b><span><strong>导出凭据</strong><em>在本机运行对应导出工具</em></span></li>
+            <li><b>3</b><span><strong>上传账号</strong><em>进入工作台添加 WorkBuddy / TRAE</em></span></li>
+            <li><b>4</b><span><strong>配置自动化</strong><em>设置时间计划与消息通知</em></span></li>
+          </ol>
+        </div>
+
+      </aside>
+    </div>
+
+    <div class="login-ambient" aria-hidden="true">
+      <span class="ambient-panel"></span>
+      <span class="ambient-line line-a"></span>
+      <span class="ambient-line line-b"></span>
+      <span class="ambient-line line-c"></span>
+      <span class="ambient-dot dot-a"></span>
+      <span class="ambient-dot dot-b"></span>
+      <span class="ambient-dot dot-c"></span>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       工作台
+       ============================================================ -->
+  <div id="console" class="app-shell" hidden>
+
+    <!-- 顶栏 -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30">
+      <!-- 窄屏时工具组由 .header-tools 收成单行、横向滑动（见 styles.css），
+           避免图标按钮堆叠成多行把 sticky 顶栏撑得很高吃掉屏幕高度。 -->
+      <div class="max-w-[1240px] mx-auto px-4 sm:px-6 py-3 sm:py-3.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div class="flex items-center gap-3 shrink-0 min-w-0">
+          <span class="brand-mark flex-none"></span>
+          <div class="shrink-0 min-w-0">
+            <h1 class="text-lg sm:text-xl font-semibold tracking-tight text-slate-900 whitespace-nowrap">DayPilot</h1>
+            <p class="header-meta flex items-center gap-1.5 text-xs text-slate-500 mt-0.5 whitespace-nowrap min-w-0">
+              <span id="liveDot" class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.15)] flex-none"></span>
+              <span class="min-w-0 truncate">更新至 <span id="headerTime" class="font-medium text-slate-700">--</span></span>
+              <span class="text-slate-300 flex-none">·</span>
+              <span id="headerMeta" class="text-slate-500 truncate flex-1 min-w-0">读取中</span>
+            </p>
+          </div>
+        </div>
+
+        <!-- 按钮文字在窄屏收起，只留图标；窄屏时整组横向滑动（.header-tools）。 -->
+        <div class="header-tools flex items-center gap-1.5 sm:gap-2 flex-none ml-auto">
+          <button id="openAccounts" type="button" title="托管账号" hidden
+                  class="h-9 px-2.5 sm:px-3.5 bg-white border border-slate-200 text-slate-700 hover:border-slate-300 hover:text-slate-900 hover:bg-slate-50 rounded-lg text-sm font-medium flex items-center gap-1.5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10"/><path d="M7 12h6"/><path d="M7 16h4"/>
+            </svg>
+            <span class="hidden xl:inline">托管账号</span>
+          </button>
+          <button id="openSchedules" type="button" title="时间计划"
+                  class="h-9 px-2.5 sm:px-3.5 bg-white border border-slate-200 text-slate-700 hover:border-slate-300 hover:text-slate-900 hover:bg-slate-50 rounded-lg text-sm font-medium flex items-center gap-1.5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+            <span class="hidden xl:inline">时间计划</span>
+          </button>
+          <button id="openNotifications" type="button" title="通知配置"
+                  class="h-9 px-2.5 sm:px-3.5 bg-white border border-slate-200 text-slate-700 hover:border-slate-300 hover:text-slate-900 hover:bg-slate-50 rounded-lg text-sm font-medium flex items-center gap-1.5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+            </svg>
+            <span class="hidden xl:inline">通知配置</span>
+          </button>
+          <button id="openAdminNotifications" type="button" title="通知总览" hidden
+                  class="h-9 px-2.5 sm:px-3.5 bg-white border border-slate-200 text-slate-700 hover:border-slate-300 hover:text-slate-900 hover:bg-slate-50 rounded-lg text-sm font-medium flex items-center gap-1.5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 6h16"/><path d="M4 12h10"/><path d="M4 18h7"/><path d="M18 14v6"/><path d="M15 17h6"/>
+            </svg>
+            <span class="hidden xl:inline">通知总览</span>
+          </button>
+          <button id="openRecent" type="button" title="执行记录"
+                  class="h-9 px-2.5 sm:px-3.5 bg-white border border-slate-200 text-slate-700 hover:border-slate-300 hover:text-slate-900 hover:bg-slate-50 rounded-lg text-sm font-medium flex items-center gap-1.5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+            <span class="hidden xl:inline">执行记录</span>
+          </button>
+
+          <button id="openAdmin" type="button" title="用户管理" hidden
+                  class="h-9 px-2.5 sm:px-3.5 bg-white border border-slate-200 text-slate-700 hover:border-slate-300 hover:text-slate-900 hover:bg-slate-50 rounded-lg text-sm font-medium flex items-center gap-1.5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+            <span class="hidden xl:inline">用户管理</span>
+          </button>
+
+          <!-- 「已归档」只在真有归档时出现 —— 没归档过的人不该看见它。 -->
+          <button id="openArchived" type="button" title="已归档账号" hidden
+                  class="h-9 px-2.5 sm:px-3.5 bg-white border border-slate-200 text-slate-700 hover:border-slate-300 hover:text-slate-900 hover:bg-slate-50 rounded-lg text-sm font-medium flex items-center gap-1.5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/>
+            </svg>
+            <span class="hidden xl:inline">已归档</span>
+            <span id="archivedCount" class="min-w-[18px] h-[18px] px-1 rounded-full bg-amber-100 text-amber-700 text-[11px] font-bold grid place-items-center">0</span>
+          </button>
+
+          <!-- 使用指南：所有登录用户可见的人手入口 -->
+          <button id="openHelp" type="button" title="使用指南"
+                  class="h-9 px-2.5 sm:px-3.5 bg-white border border-slate-200 text-slate-700 hover:border-slate-300 hover:text-slate-900 hover:bg-slate-50 rounded-lg text-sm font-medium flex items-center gap-1.5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <span class="hidden lg:inline">帮助</span>
+          </button>
+
+          <span class="hidden sm:block w-px h-6 bg-slate-200 mx-0.5"></span>
+
+          <button id="refresh" type="button" aria-label="刷新" title="刷新"
+                  class="w-9 h-9 bg-white border border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900 hover:bg-slate-50 rounded-lg grid place-items-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 6.7 3"/><path d="M21 3v6h-6"/>
+              <path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-6.7-3"/><path d="M3 21v-6h6"/>
+            </svg>
+          </button>
+
+          <!-- 「admin / 已登录」那两行是纯噪音：进得来页面就是已登录，
+               不用再宣告一次。只留头像 + 退出按钮，退出入口照样在。 -->
+          <div class="flex items-center gap-1.5 pl-2 sm:pl-3 ml-0.5 border-l border-slate-200 h-9">
+            <span id="userAvatar" class="w-8 h-8 rounded-full bg-blue-50 text-blue-700 grid place-items-center text-sm font-semibold flex-none" aria-hidden="true">管</span>
+            <button id="logout" type="button" aria-label="退出登录" title="退出登录"
+                    class="w-8 h-8 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg grid place-items-center">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- 主体：产品分组卡片。首屏放骨架，数据回来后被 render() 整体替换。 -->
+    <main class="max-w-[1240px] mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      <!-- 管理员首页统计：默认内嵌，只在 admin 出现；由 updateStats() 独立刷新 -->
+      <div id="homeStats" hidden></div>
+      <div id="groups" class="space-y-8 sm:space-y-10">
+        <section class="space-y-4">
+          <div class="rounded-2xl border border-slate-200/80 bg-white p-5">
+            <div class="flex items-center gap-3.5">
+              <div class="skeleton w-10 h-10 rounded-xl flex-none"></div>
+              <div class="flex-1 space-y-2">
+                <div class="skeleton h-3.5 w-28"></div>
+                <div class="skeleton h-3 w-44"></div>
+              </div>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            <div class="rounded-2xl border border-slate-200/80 bg-white p-5 space-y-4">
+              <div class="flex items-center gap-2.5">
+                <div class="skeleton w-9 h-9 rounded-lg flex-none"></div>
+                <div class="flex-1 space-y-2"><div class="skeleton h-3.5 w-24"></div><div class="skeleton h-3 w-32"></div></div>
+              </div>
+              <div class="grid grid-cols-3 gap-1.5">
+                <div class="skeleton h-12 rounded-lg"></div><div class="skeleton h-12 rounded-lg"></div><div class="skeleton h-12 rounded-lg"></div>
+              </div>
+              <div class="skeleton h-6 rounded"></div>
+              <div class="skeleton h-3 w-3/4"></div>
+            </div>
+            <div class="rounded-2xl border border-slate-200/80 bg-white p-5 space-y-4 hidden sm:block">
+              <div class="flex items-center gap-2.5">
+                <div class="skeleton w-9 h-9 rounded-lg flex-none"></div>
+                <div class="flex-1 space-y-2"><div class="skeleton h-3.5 w-24"></div><div class="skeleton h-3 w-32"></div></div>
+              </div>
+              <div class="grid grid-cols-3 gap-1.5">
+                <div class="skeleton h-12 rounded-lg"></div><div class="skeleton h-12 rounded-lg"></div><div class="skeleton h-12 rounded-lg"></div>
+              </div>
+              <div class="skeleton h-6 rounded"></div>
+              <div class="skeleton h-3 w-3/4"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- 已归档账号不再在首页底部展示；保留空宿主便于旧状态渲染时清空隐藏。 -->
+      <section id="archivedSection" class="mt-8 sm:mt-10" hidden></section>
+
+      <footer class="app-footer" aria-label="产品信息">
+        <span>© 2026 DayPilot</span>
+        <span class="app-footer-dot" aria-hidden="true"></span>
+        <span>版本 <b>v1.0.0</b></span>
+        <span class="app-footer-dot" aria-hidden="true"></span>
+        <span>作者 <b>EasonShu</b></span>
+        <span class="app-footer-note">
+          本文档为作者的学习研究工具，用于技术交流与互相学习，仅供参考；请遵守相关平台规则及法律法规，勿用于任何侵权或滥用行为。
+        </span>
+      </footer>
+    </main>
+
+    <!-- 登录状态底栏已移除：正常时那行「xx 已登录」是纯噪音。
+         服务连不上改由顶栏副标题 + 状态点变灰表达。 -->
+  </div>
+
+  <!-- ============================================================
+       抽屉 & 弹窗
+       ============================================================ -->
+  <div id="drawerMask" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40" hidden></div>
+  <aside id="drawer" class="fixed z-50 top-0 right-0 w-[min(520px,94vw)] h-screen bg-white shadow-2xl shadow-slate-900/20 flex flex-col overflow-hidden" hidden aria-label="详情面板">
+    <header class="flex items-start justify-between gap-4 px-5 sm:px-6 py-5 border-b border-slate-200">
+      <div class="min-w-0">
+        <!-- 显隐统一走 hidden 属性通道：再挂一个 .hidden class 会打架，
+             JS 里 subNode.hidden = false 永远盖不过 .hidden{display:none} -->
+        <span id="drawerProduct" class="inline-block bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md text-[10px] font-semibold tracking-wide mb-1.5" hidden></span>
+        <h2 id="drawerTitle" class="text-xl font-semibold tracking-tight text-slate-900">详情</h2>
+        <p id="drawerSub" class="text-xs text-slate-500 mt-1" hidden></p>
+      </div>
+      <button id="drawerClose" type="button" aria-label="关闭" class="w-8 h-8 border border-slate-200 rounded-lg bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition grid place-items-center">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </header>
+    <div id="drawerBody" class="flex-1 overflow-auto px-6 py-5"></div>
+  </aside>
+
+  <div id="uploadModal" class="fixed inset-0 z-[60] grid place-items-center px-5 bg-slate-900/40 backdrop-blur-sm" hidden>
+    <form id="uploadForm" class="w-[min(460px,94vw)] bg-white rounded-2xl shadow-2xl shadow-slate-900/20 overflow-hidden">
+      <header class="flex items-start justify-between px-6 py-5 border-b border-slate-200">
+        <div>
+          <h2 class="text-xl font-semibold tracking-tight text-slate-900">导入账号</h2>
+          <p class="text-xs text-slate-500 mt-1">上传凭据并加入 DayPilot 工作台</p>
+        </div>
+        <button id="uploadClose" type="button" aria-label="关闭" class="w-8 h-8 border border-slate-200 rounded-lg bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition grid place-items-center">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </header>
+      <div class="px-6 py-5 space-y-4">
+        <label class="block">
+          <span class="block text-sm font-medium text-slate-700 mb-1.5">产品</span>
+          <select name="product" class="w-full h-11 px-3 bg-white border border-slate-200 rounded-lg text-sm focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 focus:outline-none">
+            <option value="WorkBuddy">WorkBuddy</option>
+            <option value="TRAE">TRAE</option>
+          </select>
+        </label>
+        <label class="block">
+          <span class="block text-sm font-medium text-slate-700 mb-1.5">账号名</span>
+          <input name="account_name" type="text" placeholder="例如 Shu" required
+                 class="w-full h-11 px-3 bg-white border border-slate-200 rounded-lg text-sm focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 focus:outline-none">
+        </label>
+        <label class="block">
+          <span class="block text-sm font-medium text-slate-700 mb-1.5">凭据文件</span>
+          <input name="file" type="file" accept=".json,application/json" required
+                 class="block w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-3.5 file:rounded-lg file:border-0 file:bg-slate-100 file:text-slate-700 file:text-sm file:font-medium hover:file:bg-slate-200">
+        </label>
+        <p class="form-status" data-form-status hidden></p>
+        <button type="submit" class="primary-btn w-full h-11 mt-2 rounded-lg">上传并加入监控</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- 抽屉隐藏宿主：详情 / 设置面板共用一份 DOM -->
+  <div id="settingsSource" hidden>
+    <div id="scheduleList"></div>
+    <div id="notificationList"></div>
+    <div id="recentList"></div>
+    <span id="recentCount"></span>
+    <div id="adminList"></div>
+    <!-- 归档清单宿主：顶栏「已归档」抽屉从这里搬内容。 -->
+    <div id="archivedList"></div>
+    <!-- 使用指南宿主：顶栏「帮助」抽屉从这里搬内容。 -->
+    <div id="helpPanel">
+      <ol class="help-guide">
+        <li>
+          <span class="help-num">1</span>
+          <div class="help-body">
+            <b>在你的客户端导出凭据</b>
+            <p>打开本地的「DayPilot / TRAE」工作台，找到账号并把登录凭据导出为 JSON 文件。这就是系统替你签到所依赖的凭证，务必妥善保管。</p>
+          </div>
+        </li>
+        <li>
+          <span class="help-num">2</span>
+          <div class="help-body">
+            <b>上传凭据，账号托管给你维护</b>
+            <p>回到首页，在对应产品区点「导入 WorkBuddy / TRAE 账号」卡片，选中导出的凭据文件上传。账号卡片会出现在首页，系统每天自动替你签到；凭据过期时卡面会提示「待刷新」，重新上传即可更新。</p>
+          </div>
+        </li>
+        <li>
+          <span class="help-num">3</span>
+          <div class="help-body">
+            <b>设置每日签到时间</b>
+            <p>点「时间计划」，设置每日签到时刻，需要的话开启轮询。保存后系统按此节奏自动运行。</p>
+          </div>
+        </li>
+        <li>
+          <span class="help-num">4</span>
+          <div class="help-body">
+            <b>配置通知，异常第一时间知道</b>
+            <p>点「通知配置」，选一个渠道（Server酱、钉钉、飞书、企微、Bark 或 Webhook）填好地址并启用。签到成功、失败或凭据过期，都会按策略推送到这里。</p>
+          </div>
+        </li>
+        <li>
+          <span class="help-num">5</span>
+          <div class="help-body">
+            <b>查看执行记录与账号状态</b>
+            <p>点「执行记录」看每次签到结果与日志；点账号卡片可看单账号详情、启停、归档、删除。</p>
+          </div>
+        </li>
+      </ol>
+      <section class="help-faq">
+        <h4>常见问题</h4>
+        <dl>
+          <dt>如何更换凭据？</dt>
+          <dd>点开账号卡片，选择重新导入同名账号的新凭据即可替换，不需要删除重来。</dd>
+          <dt>签到失败会怎样？</dt>
+          <dd>失败不会中断其他账号；若已开启通知，你会立刻收到失败提醒，可以回去排查凭据是否过期。</dd>
+          <dt>不想某账号签到怎么办？</dt>
+          <dd>点开账号卡片即可「停用」（暂停）或「启用」（恢复）；「删除」会移除凭据与日志。</dd>
+          <dt>如何撤回授权？</dt>
+          <dd>点开账号卡片停用或删除该账号即可立即撤回授权，你的凭据会随之下线或移除。</dd>
+        </dl>
+      </section>
+      <p class="help-note">本系统仅用于技术学习与个人研究，请遵守相关平台规则。托管即代表你同意本服务代为签到，凭据仅用于签到用途。</p>
+    </div>
+  </div>
+
+  <!-- 全局通知 -->
+  <div id="toast" class="toast-viewport" aria-live="polite" aria-atomic="false"></div>
+
+  <script src="/app.js?v=20261006-split-v21"></script>
+</body>
+</html>
