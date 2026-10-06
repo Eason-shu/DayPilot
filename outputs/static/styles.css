@@ -546,8 +546,16 @@ body::-webkit-scrollbar-track{
   justify-content:space-between;
   gap:12px;
 }
+.showcase-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  flex-wrap:wrap;
+  gap:8px;
+}
 .showcase-chip,
-.showcase-version{
+.showcase-version,
+.showcase-link{
   display:inline-flex;
   align-items:center;
   height:28px;
@@ -559,6 +567,19 @@ body::-webkit-scrollbar-track{
   font-size:11px;
   font-weight:750;
   letter-spacing:0;
+}
+.showcase-link{
+  gap:5px;
+  color:#cffafe;
+  text-decoration:none;
+  border-color:rgba(103,232,249,.25);
+  background:rgba(14,116,144,.28);
+  transition:transform .18s ease, border-color .18s ease, background .18s ease;
+}
+.showcase-link:hover{
+  transform:translateY(-1px);
+  border-color:rgba(125,211,252,.55);
+  background:rgba(14,116,144,.4);
 }
 .showcase-chip i{
   width:7px;
@@ -2302,6 +2323,16 @@ button:not(:disabled):active{transform:scale(.97)}
 .app-footer b{
   color:#64748b;
   font-weight:750;
+}
+.app-footer-link{
+  color:#2563eb;
+  font-weight:750;
+  text-decoration:none;
+}
+.app-footer-link:hover{
+  color:#1d4ed8;
+  text-decoration:underline;
+  text-underline-offset:3px;
 }
 .app-footer-note{
   flex-basis:100%;
