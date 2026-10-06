@@ -1,0 +1,67 @@
+{
+  "auth": {
+    "username": "admin",
+    "password": "admin123456",
+    "secret": ""
+  },
+  "schedules": {
+    "WorkBuddy": {
+      "enabled": true,
+      "daily_time": "00:05",
+      "daily_mode": "silent",
+      "poll_enabled": true,
+      "poll_times": [
+        "05:00",
+        "12:00",
+        "20:00"
+      ],
+      "poll_mode": "silent-poll"
+    },
+    "TRAE": {
+      "enabled": true,
+      "daily_time": "00:35",
+      "daily_mode": "silent",
+      "poll_enabled": true,
+      "poll_times": [
+        "05:30",
+        "12:30",
+        "20:30"
+      ],
+      "poll_mode": "silent-poll"
+    }
+  },
+  "notifications": {
+    "WorkBuddy": {
+      "channel": "serverchan",
+      "key": "",
+      "url": "",
+      "on": "daily",
+      "group": "WorkBuddy",
+      "enabled": false
+    },
+    "TRAE": {
+      "channel": "serverchan",
+      "key": "",
+      "url": "",
+      "on": "daily",
+      "group": "Trae",
+      "enabled": false
+    }
+  },
+  "crypto": {
+    "enabled": true
+  },
+  "rate_limit": {
+    "enabled": true,
+    "auth": {
+      "limit": 8,
+      "window": 60
+    },
+    "api": {
+      "limit": 180,
+      "window": 60
+    },
+    "proxy": false
+  },
+  "app_secret": ""
+}

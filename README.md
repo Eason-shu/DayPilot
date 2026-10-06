@@ -31,9 +31,9 @@ DayPilot 是一个用于技术学习与研究的自动签到工作台。它把�
     ├── static/               # 前端页面与静态资源
     ├── apps/                 # WorkBuddy / TRAE 业务脚本
     ├── deploy/               # systemd 部署脚本与服务模板
-    ├── data/                 # 运行数据，禁止提交真实数据
+    ├── data/                 # 运行数据；仓库仅保留空秘钥示例配置
     ├── runtime/              # 运行时锁、历史、任务输出
-    └── README.md             # 更详细的部署与配置说明
+    └── 系统部署说明.html      # 更详细的部署与配置说明
 ```
 
 ## 快速开始
@@ -88,13 +88,15 @@ journalctl -u checkinops -n 50 --no-pager
 
 重点不要提交：
 
-- `outputs/data/`
+- `outputs/data/dailyhub.sqlite3`
+- `outputs/data/users/`
 - `outputs/runtime/`
 - `outputs/archive/`
 - `outputs/apps/**/sessions*/`
 - `outputs/apps/**/logs/`
-- `outputs/apps/**/config/notify.json`
 - `outputs/static/downloads/*.exe`
+
+仓库会保留 `outputs/data/workbench.json` 与两个 `outputs/apps/**/config/notify.json` 作为空秘钥示例，请只提交脱敏后的样例内容。
 
 发布前清单见 [docs/GITHUB_RELEASE_CHECKLIST.md](docs/GITHUB_RELEASE_CHECKLIST.md)。
 
@@ -114,4 +116,3 @@ journalctl -u checkinops -n 50 --no-pager
 ## 许可证
 
 本项目使用 [MIT License](LICENSE) 开源。第三方资源与依赖的许可证请以其原项目为准。
-

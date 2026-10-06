@@ -11,14 +11,14 @@ DayPilot 会处理用户导出的登录凭据、通知渠道密钥、执行日�
 请不要提交或公开：
 
 - `outputs/data/dailyhub.sqlite3`
-- `outputs/data/workbench.json`
 - `outputs/data/users/`
 - `outputs/runtime/`
 - `outputs/archive/`
 - `outputs/apps/**/sessions*/`
 - `outputs/apps/**/logs/`
-- `outputs/apps/**/config/notify.json`
 - 任何 `.json` 凭据、refreshToken、Cookie、Webhook URL、Server酱 Key、飞书/企微/Bark Key
+
+仓库中的 `outputs/data/workbench.json` 和 `outputs/apps/**/config/notify.json` 只能作为空秘钥示例存在。提交前请确认 `auth.secret`、`app_secret`、通知 Key、Webhook URL 均为空。
 
 ## 部署建议
 
@@ -44,4 +44,3 @@ DayPilot 会处理用户导出的登录凭据、通知渠道密钥、执行日�
 ## 免责声明
 
 本项目仅用于技术学习与研究。使用者应自行确认其使用行为符合相关平台规则与法律法规。
-

@@ -6,13 +6,13 @@
 
 确认以下路径没有被提交：
 
-- `outputs/data/`
+- `outputs/data/dailyhub.sqlite3`
+- `outputs/data/users/`
 - `outputs/runtime/`
 - `outputs/archive/`
 - `outputs/apps/**/sessions*/`
 - `outputs/apps/**/trae-sessions*/`
 - `outputs/apps/**/logs/`
-- `outputs/apps/**/config/notify.json`
 - `outputs/static/downloads/*.exe`
 
 推荐检查：
@@ -21,17 +21,18 @@
 git status --short
 git check-ignore -v outputs/data/dailyhub.sqlite3
 git check-ignore -v outputs/apps/workbuddy/sessions/shu.json
-git check-ignore -v outputs/apps/trae/config/notify.json
+git diff -- outputs/data/workbench.json outputs/apps/workbuddy/config/notify.json outputs/apps/trae/config/notify.json
 ```
 
 ## 2. 检查默认配置
 
+- `outputs/data/workbench.json` 只作为示例配置提交。
 - 不要提交真实管理员账号密码。
 - 不要提交真实 `app_secret`、`auth.secret`。
 - 不要提交真实通知 Key、Webhook URL。
 - 不要提交真实用户数据。
 
-`server.py` 会在首次启动时生成运行配置，公开仓库不需要带真实运行数据。
+`server.py` 会在首次启动时补齐空的运行密钥。公开仓库只保留空秘钥示例，不带真实运行数据。
 
 ## 3. 检查文档
 
@@ -64,4 +65,3 @@ python server.py --check
 - 导出工具 `.exe` 更适合作为 GitHub Release 附件发布。
 - 真实服务器部署请启用 HTTPS。
 - 在 README 顶部放置项目封面图：`outputs/static/assets/daypilot-promo-cover-v1.png`。
-

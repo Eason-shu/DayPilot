@@ -21,20 +21,27 @@ outputs/data/**
 outputs/runtime/**
 outputs/archive/**
 
+# Public sample runtime config. Keep secrets blank in this file.
+!outputs/data/
+!outputs/data/workbench.json
+
 # Credential/session stores
 outputs/apps/**/sessions/**
 outputs/apps/**/sessions.disabled/**
 outputs/apps/**/trae-sessions/**
 outputs/apps/**/trae-sessions.disabled/**
 outputs/apps/**/*.json.bak
+outputs/apps/**/*.local.json
 
 # Logs and generated state
 outputs/apps/**/logs/**
 outputs/apps/**/*.log
 outputs/apps/**/notify_state.json
 
-# Notification secrets
+# Public sample notification configs. Keep keys and webhook URLs blank.
 outputs/apps/**/config/notify.json
+!outputs/apps/workbuddy/config/notify.json
+!outputs/apps/trae/config/notify.json
 !outputs/apps/**/config/notify.example.json
 
 # Locally packaged binaries should be attached to GitHub Releases instead of committed.
@@ -42,4 +49,3 @@ outputs/static/downloads/*.exe
 
 # Local/private agent state
 .workbuddy/
-
