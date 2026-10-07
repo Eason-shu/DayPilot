@@ -1,7 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# 作者：EasonShu
-r"""按「当前登录账号」自动命名导出凭据 —— export_session.py 的自动命名包装。
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 EasonShu
+r"""自动命名导出 —— export_session.py 的入口包装，按「当前登录账号」决定文件名。
+
+要解决的问题：一台机器上先后登录过多个账号时，手工给导出的凭据起名容易撞车
+或互相覆盖。本脚本先问「当前登录的是谁」，再按其昵称与 uid 生成安全文件名，
+并把「账号 → 文件名」的映射记进 account-names.json，保证同一账号后续导出沿用
+同名；--rename 可重新起名，--as-new 则在重名时另存一份而不覆盖。
+
+用法：
+  python export_auto.py [--dir DIR] [--name NAME] [--rename] [--as-new] [--who]
+
+导出逻辑本身由 export_session.py 以子进程方式执行，本文件只负责命名与落位。
 """
 
 import argparse

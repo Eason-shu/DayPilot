@@ -1,5 +1,6 @@
 #!/bin/sh
-# 作者：EasonShu
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 EasonShu
 # =========================================================================
 # DayPilot 自动签到工作台 · systemd 部署脚本
 #

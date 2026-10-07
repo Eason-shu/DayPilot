@@ -1,7 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# 作者：EasonShu
-"""服务器侧：用 refreshToken 链式续期，让签到长期脱离本机。
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 EasonShu
+"""服务器侧凭据续期 —— 用 refreshToken 链式续期，让签到长期脱离本机。
+
+背景：导出的 accessToken 只有几十天有效期。本脚本读 session.json 里的
+refreshToken，在临近过期时换一对新 token 并回写，使服务器无需重新导出凭据
+也能长期签到。
+
+用法：
+  python renew_session.py [--file F] [--threshold-days N] [--force]
+                          [--dry-run] [--status] [--endpoint URL] [--log PATH]
+  --threshold-days  剩余天数低于该值才真正发请求（默认 10 天）
+  --status          只读状态，不做任何修改
+  --dry-run         只报告决策与请求形状，不发请求
+  --force           忽略阈值，无条件续期一次
+
+失败不阻断签到：续期只影响凭据寿命，拿不到新 token 时签到脚本仍按原凭据运行，
+因此 multi_run.py 忽略本脚本的非零退出码。
 """
 
 import argparse

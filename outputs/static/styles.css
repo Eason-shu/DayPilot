@@ -1,15 +1,26 @@
-/* 作者：EasonShu
+/* SPDX-License-Identifier: MIT
+   Copyright (c) 2026 EasonShu
    =========================================================================
-   DayPilot · 自定义样式
-   ========================================================================= */
+   DayPilot · 自定义样式（配合 index.html 与 app.js）
 
-/* ===== 登录/工作台互斥显示 ============================================= */
+   约定与现状：
+     · 类名扁平短横线为主（.app-shell / .account-card），状态与变体用 `--` 后缀
+       （.orb--cyan / .stat-seg--success）
+     · 动画时长与缓动统一取 :root 的 --dur-* / --ease-* 令牌，引用处带字面量
+       兜底值，因此令牌块写在文件中段也不影响生效
+     · 必须保留 prefers-reduced-motion 分支，尊重系统的「减少动态效果」
+     · 已知项：颜色尚未收敛为令牌，改主题色需要全局替换字面色值
+     · 分节标题写成 `===== 标题 =====` 的块注释，小节写成 `---- 标题 ----`，
+       统一宽度 76 列（此处刻意不写出注释定界符，以免提前闭合本注释）
+   ====================================================================== */
+
+/* ===== 登录/工作台互斥显示 ============================================ */
 body:not(.locked) .login-screen{display:none}
 body.locked .app-shell{display:none!important}
 body.locked{overflow:hidden}
 [hidden]{display:none!important}
 
-/* ===== 全局滚动条 ====================================================== */
+/* ===== 全局滚动条 ===================================================== */
 html{
   scrollbar-gutter:stable;
 }
@@ -54,7 +65,7 @@ body::-webkit-scrollbar-track{
   }
 }
 
-/* ===== 登录页背景 ====================================================== */
+/* ===== 登录页背景 ===================================================== */
 .login-screen{
   position:relative;
   justify-content:center!important;
@@ -447,33 +458,6 @@ body::-webkit-scrollbar-track{
   letter-spacing:0;
 }
 
-.login-note{
-  margin:10px 0 0;
-  padding:11px 12px 11px 26px;
-  border:1px solid;
-  border-radius:12px;
-  font-size:11px;
-  line-height:1.6;
-  position:relative;
-}
-
-.login-note::before{
-  content:"";
-  position:absolute;
-  left:12px;
-  top:15px;
-  width:7px;
-  height:7px;
-  border-radius:50%;
-}
-
-.login-note--warn{
-  border-color:#fde68a;
-  background:#fffbeb;
-  color:#92400e;
-}
-.login-note--warn::before{background:#f59e0b}
-
 .login-showcase{
   position:relative;
   overflow:hidden;
@@ -837,7 +821,7 @@ body::-webkit-scrollbar-track{
   }
 }
 
-/* ===== 主按钮（登录 / 上传 / 保存 / 替换 等共用） ==================== */
+/* ===== 主按钮（登录 / 上传 / 保存 / 替换 等共用） ===================== */
 .primary-btn{
   display:inline-flex;
   align-items:center;
@@ -886,7 +870,7 @@ body::-webkit-scrollbar-track{
 .secondary-btn:active:not(:disabled){transform:translateY(0)}
 .secondary-btn:disabled{opacity:.6;cursor:not-allowed;transform:none;box-shadow:none}
 
-/* ===== 立即执行反馈 ==================================================== */
+/* ===== 立即执行反馈 =================================================== */
 button[data-run-state]{
   cursor:wait;
   justify-content:center;
@@ -941,7 +925,7 @@ button[data-run-state="neutral"]{
   flex:none;
 }
 
-/* ===== 品牌标识（DayPilot logo）====================================== */
+/* ===== 品牌标识（DayPilot logo） ====================================== */
 .brand-mark{
   display:inline-block;
   width:38px;height:38px;
@@ -955,7 +939,7 @@ button[data-run-state="neutral"]{
   display:none;
 }
 
-/* ===== spark 趋势条（用于账号卡）===================================== */
+/* ===== spark 趋势条（用于账号卡） ===================================== */
 .spark-row{margin-top:2px}
 .spark-head{
   display:flex;justify-content:space-between;
@@ -981,7 +965,7 @@ button[data-run-state="neutral"]{
   margin-top:3px;
 }
 
-/* ===== Toast / 微交互 ================================================== */
+/* ===== Toast / 微交互 ================================================= */
 .toast-viewport{
   position:fixed;
   top:max(18px, env(safe-area-inset-top));
@@ -1191,7 +1175,7 @@ button[data-run-state="neutral"]{
   pointer-events:none;
 }
 
-/* ===== 工作台进场动画 ================================================ */
+/* ===== 工作台进场动画 ================================================= */
 .app-shell{
   position:relative;
   min-height:100vh;
@@ -1225,7 +1209,7 @@ body:not(.locked) #console{
   to{opacity:1;transform:none}
 }
 
-/* ===== 分组卡片：悬浮提示 =========================================== */
+/* ===== 分组卡片：悬浮提示 ============================================= */
 .group-header{
   transition:box-shadow .25s ease, border-color .25s ease, transform .25s ease;
 }
@@ -1256,7 +1240,7 @@ body:not(.locked) #console{
   object-fit:cover;
 }
 
-/* ===== 账号卡片 ====================================================== */
+/* ===== 账号卡片 ======================================================= */
 .account-card{
   transition:border-color .25s ease, box-shadow .25s ease, transform .25s ease;
   /* 分层光影：环境阴(远而淡) + 接触阴(近而实) + 顶部 1px 高光收边 */
@@ -1377,7 +1361,7 @@ body:not(.locked) #console{
 /* =========================================================================
    动效层 —— 抽屉 / 弹窗 / 骨架屏 / 状态脉冲
    令牌统一放这里，改手感只动 :root。
-   ========================================================================= */
+   ====================================================================== */
 :root{
   --dur-1:.16s;
   --dur-2:.24s;
@@ -1388,7 +1372,7 @@ body:not(.locked) #console{
   --ease-spring:cubic-bezier(.34,1.42,.5,1);
 }
 
-/* ----- 抽屉：整块从右侧滑入 ------------------------------------------- */
+/* ---- 抽屉：整块从右侧滑入 -------------------------------------------- */
 #drawer{
   transform:translateX(100%);
   will-change:transform;
@@ -1435,7 +1419,7 @@ body:not(.locked) #console{
   background-clip:content-box;
 }
 
-/* ----- 账号详情：总览 / 字段 / 时间线 ---------------------------------- */
+/* ---- 账号详情：总览 / 字段 / 时间线 ---------------------------------- */
 .account-detail{
   color:#0f172a;
 }
@@ -1576,7 +1560,7 @@ body:not(.locked) #console{
   }
 }
 
-/* ----- 设置页：时间计划 / 通知 / 最近记录 ------------------------------ */
+/* ---- 设置页：时间计划 / 通知 / 最近记录 ------------------------------ */
 .setting-summary{
   border:1px solid #e2e8f0;
   border-radius:16px;
@@ -2139,7 +2123,7 @@ body:not(.locked) #console{
   font-weight:850;
 }
 
-/* ----- 弹窗：缩放弹入 -------------------------------------------------- */
+/* ---- 弹窗：缩放弹入 -------------------------------------------------- */
 #uploadModal{opacity:0;transition:opacity var(--dur-2) var(--ease-in-out)}
 #uploadModal.is-open{opacity:1}
 #uploadModal > form{
@@ -2149,7 +2133,7 @@ body:not(.locked) #console{
 }
 #uploadModal.is-open > form{opacity:1;transform:none}
 
-/* ----- 顶栏状态点：呼吸光环（异常时换色）------------------------------- */
+/* ---- 顶栏状态点：呼吸光环（异常时换色） ------------------------------ */
 #liveDot{position:relative}
 #liveDot::after{
   content:"";
@@ -2168,11 +2152,11 @@ body:not(.locked) #console{
    和异常态（danger 换色）不冲突 —— 颜色由 setLiveDot 定，节奏由这里定。 */
 #liveDot.is-syncing::after{animation-duration:1.1s}
 
-/* ----- 内容展开淡入（执行记录里的日志详情）----------------------------- */
+/* ---- 内容展开淡入（执行记录里的日志详情） ---------------------------- */
 .reveal{animation:panelRise .28s var(--ease-out) backwards}
 [data-log-toggle] svg{transition:transform .22s var(--ease-out);flex:none}
 
-/* ----- 执行记录：日期分组 + 行状态 --------------------------------------
+/* ---- 执行记录：日期分组 + 行状态 ----------------------------------------
    列表本身是纯 Tailwind，这里只放 Tailwind 伪类够不着的三件事：
    1) 第一组日期头顶不要空一大截  2) 展开中的行要钉住底色  3) 悬停时行内位移 */
 #drawerBody .recent-day:first-child,
@@ -2214,7 +2198,7 @@ body:not(.locked) #console{
   overflow-wrap:anywhere;
 }
 
-/* ----- 首屏骨架 -------------------------------------------------------- */
+/* ---- 首屏骨架 -------------------------------------------------------- */
 .skeleton{
   background:linear-gradient(90deg,#eef2f7 25%,#e3e9f1 37%,#eef2f7 63%);
   background-size:400% 100%;
@@ -2226,11 +2210,11 @@ body:not(.locked) #console{
   to{background-position:0 50%}
 }
 
-/* ----- 按钮按压反馈（顶栏图标按钮）------------------------------------- */
+/* ---- 按钮按压反馈（顶栏图标按钮） ------------------------------------ */
 button:not(:disabled){transition:background-color .18s ease, color .18s ease, border-color .18s ease, transform .12s ease}
 button:not(:disabled):active{transform:scale(.97)}
 
-/* ----- 表单保存状态 ---------------------------------------------------- */
+/* ---- 表单保存状态 ---------------------------------------------------- */
 .form-status{
   min-height:34px;
   display:flex;
@@ -2280,7 +2264,7 @@ button:not(:disabled):active{transform:scale(.97)}
   50%{opacity:1;transform:scale(1.15)}
 }
 
-/* ----- 已归档账号清单 -------------------------------------------------- */
+/* ---- 已归档账号清单 -------------------------------------------------- */
 /* 卡片先落位，行再依次补上 —— 右侧「恢复」按钮是唯一的出路，得让人看见它 */
 #archivedSection > section{animation:panelRise .32s var(--ease-out) backwards}
 #archivedSection li{
@@ -2305,7 +2289,7 @@ button:not(:disabled):active{transform:scale(.97)}
 #archivedCount{transition:transform var(--dur-1, .18s) var(--ease-out, cubic-bezier(.16,1,.3,1))}
 #openArchived:hover #archivedCount{transform:scale(1.12)}
 
-/* ----- 首页版权信息 ---------------------------------------------------- */
+/* ---- 首页版权信息 ---------------------------------------------------- */
 .app-footer{
   margin:36px auto 0;
   padding:18px 0 4px;
@@ -2355,7 +2339,7 @@ button:not(:disabled):active{transform:scale(.97)}
   }
 }
 
-/* ----- 用户管理 -------------------------------------------------------- */
+/* ---- 用户管理 -------------------------------------------------------- */
 .setting-live-dot.is-waiting{
   background:#f59e0b;
   box-shadow:0 0 0 4px rgba(245,158,11,.12);
@@ -2713,7 +2697,7 @@ button:not(:disabled):active{transform:scale(.97)}
   .admin-notify-meta{justify-content:flex-start}
 }
 
-/* ----- 账号身份（账号 ID / accountName）--------------------------------- */
+/* ---- 账号身份（账号 ID / accountName） ------------------------------- */
 /* 凭据里没有这两个字段时显示「未记录」，用更浅的颜色区分「真的有值」和「没取到」，
    否则 11px 的灰字里「未记录」看起来和真实值一样重。 */
 .account-info-grid dd.is-muted{
@@ -2759,7 +2743,7 @@ button:not(:disabled):active{transform:scale(.97)}
   .detail-copy{opacity:1}
 }
 
-/* ----- 尊重系统「减少动态效果」----------------------------------------- */
+/* ---- 尊重系统「减少动态效果」 ---------------------------------------- */
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{
     animation-duration:.001ms!important;
@@ -2835,7 +2819,7 @@ button:not(:disabled):active{transform:scale(.97)}
   }
 }
 
-/* ===== 使用指南（顶栏「帮助」抽屉）====================================== */
+/* ===== 使用指南（顶栏「帮助」抽屉） =================================== */
 .help-guide{
   list-style:none;
   margin:0;

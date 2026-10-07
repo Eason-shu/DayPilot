@@ -37,7 +37,7 @@ git diff -- outputs/data/workbench.json outputs/apps/workbuddy/config/notify.jso
 ## 3. 检查文档
 
 - 根目录 `README.md` 能说明项目是什么、怎么运行、风险是什么。
-- `outputs/README.md` 能说明部署和配置。
+- `outputs/deploy/README.md` 与 `outputs/系统部署说明.html` 能说明部署和配置。
 - `SECURITY.md` 说明敏感数据和安全报告方式。
 - `CONTRIBUTING.md` 说明如何本地开发和提交 PR。
 - `LICENSE` 已经确认是你想使用的开源许可证。
@@ -57,7 +57,7 @@ python server.py --check
 - 时间计划保存
 - 通知配置保存与测试消息
 - 执行记录与 `.log` 原始日志查看
-- 管理员用户审核
+- 管理员用户管理（审核 / 停用 / 设管理员 / 删除）
 
 ## 5. 发布建议
 

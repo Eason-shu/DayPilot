@@ -1,7 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# 作者：EasonShu
-"""把本机加密凭据导出成「可搬运的明文 session」，供异地常开设备使用。
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 EasonShu
+"""把本机加密凭据导出成可搬运的明文 session —— 供异地常开设备签到。
+
+背景：签到脚本需要明文 token，而桌面端把凭据加密存在本机。本脚本在「已登录
+的那台机器」上一次性完成解密与组装，产出的 session.json 拷到服务器即可长期
+使用，服务器侧不再需要桌面端。
+
+流程：
+  load_signin()     复用 signin.py 的凭据定位与解密能力，不重复实现
+  build_portable()  组装便携结构：账号、endpoint、accessToken、可选 refreshToken
+  verify()          回读校验，确认产出文件真的可用（而非只是写成功了）
+  write_secure()    落盘，POSIX 下权限收窄到 0600
+  write_env()       可选：另出一份 workbuddy.env 供 systemd 直接读取
+
+安全提示：产出的 session.json 等同账号本身，切勿外传或提交进仓库。
 """
 
 import argparse

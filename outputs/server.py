@@ -1,17 +1,34 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# 作者：EasonShu
-"""签到工作台：Python 静态网页服务 + 统一账号/调度管理。
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 EasonShu
+"""DayPilot 服务端 —— 只依赖 Python 标准库的自动签到工作台。
 
-本目录是完整可部署项目，运行时只依赖 outputs 内部文件：
-  outputs/apps/workbuddy  WorkBuddy 自动签到逻辑
-  outputs/apps/trae       TRAE 自动签到逻辑
+把「凭据托管 + 定时触发 + 脚本调度 + 结果通知 + 多用户隔离」收进一个
+HTTP 服务，供浏览器操作。
 
-可通过环境变量覆盖：
-  SIGNIN_ROOT               工作台根目录，默认 server.py 所在目录
-  DASHBOARD_HOST            监听地址，默认 0.0.0.0
-  DASHBOARD_PORT            监听端口，默认 8000
-  DASHBOARD_TZ              日期时区，默认 Asia/Shanghai
+运行模型（单进程三条线程）：
+  HTTP 服务    ThreadingHTTPServer，请求处理见 DashboardHandler
+  调度器       scheduler_loop，每 20 秒比对一次时间点；多实例部署时由
+               runtime/scheduler.lock 选出唯一的接管者，其余只服务 HTTP
+  账号清理     purge_loop，回收注册后从未上传凭据的空壳账号
+
+磁盘布局（路径均相对本文件所在目录）：
+  data/workbench.json     全局配置：管理员、加密密钥、限流、注册策略
+  data/dailyhub.sqlite3   用户表与各用户的面板配置
+  data/users/u<id>/       每用户独立工作区：凭据、日志、归档、运行锁
+  runtime/                调度锁、触发记录、任务日志
+
+入口：
+  python server.py [--host H] [--port P]   启动服务
+  python server.py --check                 只打印一次状态 JSON 后退出
+  python server.py --purge-orphans         清理已删账号遗留的工作区目录
+
+环境变量：
+  SIGNIN_ROOT     工作台根目录，默认取 server.py 所在目录
+  DASHBOARD_HOST  监听地址，默认 0.0.0.0
+  DASHBOARD_PORT  监听端口，默认 8000
+  DASHBOARD_TZ    日期时区，默认 Asia/Shanghai
 """
 
 import argparse
@@ -117,13 +134,24 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "enabled": False,
         },
     },
+    # 注册策略。默认「自动开通 + 异常降级人工审核」：
+    #   · 正常注册（IP 名额内、服务端指纹未见过的设备）→ 立刻可用，不用等管理员；
+    #   · 疑似多开（同一台设备已注册过）→ 不改拒绝，而是落成 pending 走人工审核，
+    #     避免共享出口（公司/校园/CGNAT）被直接挡在门外；
+    #   · 同一设备已有待审核申请 → 直接拒绝，防止待审记录被刷屏式堆积。
+    "registration": {
+        "auto_approve": True,
+        "ip_quota": 3,
+        "ip_window_hours": 24,
+        "server_fingerprint": True,
+    },
 }
 
 TASKS: Dict[str, Dict[str, Any]] = {}
 TASK_LOCK = threading.Lock()
 SCHEDULER_STOP = threading.Event()
 
-# ---------------------------------------------------------------- 调度器互斥
+# ---- 调度器互斥 -------------------------------------------------------------
 # 同一个 outputs/ 目录下若跑了多个 server.py，每个实例都会起一份 scheduler_loop，
 SCHEDULER_LOCK_PATH = RUNTIME_DIR / "scheduler.lock"
 # 无凭据账号清理的独立锁：跟调度锁分开，避免同进程里调度与清理互相占用。
@@ -525,10 +553,9 @@ def credential_meta(path: Path, product: str) -> Dict[str, Any]:
     auth_info_account = nested(data, "authInfo", "account")
     claims = jwt_claims(pick(auth, "accessToken", "token") or pick(auth_info, "token"))
 
-    # display_name 保持原有取值顺序（TRAE 的 account.accountName → 文件名），
-    # 好让这次改动是「纯新增」：卡片标题不会因为多了 accountName 就换了个样子。
-    # 顺带修掉一个潜伏 bug —— 原来这里写 pick(auth_info, "account", ...)，
-    # 而 authInfo.account 是个 dict，会被 pick 原样返回，再 str() 成一大串字典文本。
+    # 取值顺序沿用卡片标题的既有观感：优先 TRAE 的 account.accountName，缺失时
+    # 退回文件名。注意 authInfo.account 是 dict —— 只能取它下层的 username / name，
+    # 直接交给 pick() 再 str() 会让标题变成一大串字典文本。
     display_name = (
         pick(account, "accountName", "username", "name")
         or pick(auth_info_account, "username", "name")
@@ -1021,12 +1048,12 @@ def build_dashboard(user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
-# build_dashboard 结果缓存：build_dashboard 每次都要 discover_product 扫磁盘，
-# 轮询高频时开销大。这里按「用户名|角色」缓存最多 _STATUS_CACHE_TTL 秒。
-# 变更接口都会直接返回各自的完整 payload（不经缓存），所以无需显式失效，
-# 轮询最多滞后 TTL 秒即自动刷新，可接受。
-# ---------------------------------------------------------------------------
+# ---- 仪表盘结果缓存 ---------------------------------------------------------
+# build_dashboard 每次都要 discover_product 扫磁盘，前端轮询高频时开销明显，
+# 故按「用户名|角色」缓存最多 _STATUS_CACHE_TTL 秒。
+#
+# 缓存不做显式失效：所有写接口都会直接返回各自的完整 payload，不经过这里；
+# 前端轮询最多滞后 TTL 秒即自动刷新，可以接受。
 _STATUS_CACHE_TTL = 3.0
 _dashboard_cache: Dict[str, Dict[str, Any]] = {}
 _DASHBOARD_CACHE_LOCK = threading.Lock()
@@ -1093,25 +1120,26 @@ def base64url_decode(value: str) -> bytes:
     return base64.urlsafe_b64decode((value + padding).encode("ascii"))
 
 
-# ---------------------------------------------------------------------------
-# HTTP 请求 / 响应体加解密（纯标准库，无第三方依赖）
-# 密钥存 workbench.json 的 app_secret（base64url 32 字节），首启自动生成。
-# 封包格式：{"v":2,"n":<b64 nonce>,"c":<b64 密文>,"t":<b64 tag>}
-#   方案 = HMAC-SHA256 计数器模式流加密 + 加密后 HMAC 认证（encrypt-then-MAC）。
-#   AAD = "<HTTP方法> <路径>"，绑定请求指向，防止密文被串用到其它接口。
-# 说明：这是应用层防御纵深（体加密 + 明文不可读），真正的传输机密性仍需
-#       走 HTTPS；纯 HTTP 下本方案与明文同信道，故强烈建议同时上 TLS。
-# ---------------------------------------------------------------------------
+# ---- HTTP 请求体加解密 ------------------------------------------------------
+# 纯标准库实现，不引入第三方依赖。密钥为 workbench.json 的 app_secret
+# （base64url 编码的 32 字节），首次启动时自动生成。
+#
+#   封包格式：{"v":2,"n":<b64 nonce>,"c":<b64 密文>,"t":<b64 tag>}
+#   算法组合：HMAC-SHA256 计数器模式流加密 + encrypt-then-MAC 认证
+#   AAD     ："<HTTP方法> <路径>"，绑定密文与请求指向，防止跨接口重放
+#
+# 安全边界：这是应用层防御纵深（请求体加密、明文不落日志），并不提供传输
+# 机密性 —— 纯 HTTP 下与明文同信道。对外暴露时务必同时启用 HTTPS。
 _CRYPTO_LOCK = threading.Lock()
 _CRYPTO_CACHE: Dict[str, Any] = {"key": None, "enabled": True}
 
 
-# ---------------------------------------------------------------------------
-# IP 滑动窗口限流（防爬 / 防爆破）
-#   每个 (bucket, ip) 一个单调时钟时间戳队列；窗口内超限返回 429。
-#   配置：workbench.json 里 rate_limit.enabled / api / auth / proxy
-#     默认 auth 8 次/分、api 180 次/分、静态不限制。
-# ---------------------------------------------------------------------------
+# ---- IP 滑动窗口限流 --------------------------------------------------------
+# 防爬与防口令爆破。每个 (bucket, ip) 维护一个单调时钟时间戳队列，
+# 窗口内超过上限即返回 429。
+#
+#   配置：workbench.json → rate_limit.enabled / api / auth / proxy
+#   默认：auth 8 次/分、api 180 次/分、静态资源不限
 _RATE = threading.Lock()
 _RATE_WINDOWS: Dict[str, Any] = {}
 _RATE_PRUNE_TICKS = 0
@@ -1121,8 +1149,13 @@ def _rate_bucket(bucket: str, ip: str) -> str:
     return f"{bucket}|{ip}"
 
 
-def _rate_allow(bucket: str, ip: str, limit: int, window: float) -> Tuple[bool, int]:
-    """返回 (是否放行, 需要等待秒数)。"""
+def _rate_allow(bucket: str, ip: str, limit: int, window: float,
+                consume: bool = True) -> Tuple[bool, int]:
+    """返回 (是否放行, 需要等待秒数)。
+
+    consume=False 表示只「看额度」不记账。注册配额用它先探后记：用户名已被
+    占用、密码不合格这类失败的请求不该吃掉名额，否则连点两次就没了。
+    """
     global _RATE_WINDOWS, _RATE_PRUNE_TICKS
     now = time.monotonic()
     key = _rate_bucket(bucket, ip)
@@ -1135,7 +1168,8 @@ def _rate_allow(bucket: str, ip: str, limit: int, window: float) -> Tuple[bool, 
         if len(dq) >= limit:
             retry = int(window - (now - dq[0])) + 1
             return False, max(1, retry)
-        dq.append(now)
+        if consume:
+            dq.append(now)
         # 轻量回收：每 512 次清一次空桶，防长时间积累过多 IP
         _RATE_PRUNE_TICKS += 1
         if _RATE_PRUNE_TICKS % 512 == 0:
@@ -1387,15 +1421,34 @@ def init_database(config: Dict[str, Any]) -> None:
                 approved_at TEXT,
                 approved_by INTEGER,
                 last_login_at TEXT,
-                fp_hash TEXT
+                fp_hash TEXT,
+                client_fp TEXT,
+                reg_ip TEXT
             )
             """
         )
-        # 存量库迁移：老库没有 fp_hash 列就补上；同一浏览器特征只能注册一个账号。
-        # NULL 在 SQLite 唯一索引里互不冲突，所以老用户(未录指纹)不受影响。
+        # 存量库迁移：老库缺列就补上。
+        #   fp_hash   —— 服务端指纹（权威设备判据），NULL 在唯一索引里互不冲突
+        #   client_fp —— 前端上报的浏览器指纹，仅供风控参考，不参与去重
+        #   reg_ip    —— 注册来源 IP，出问题时用来回溯
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
         if "fp_hash" not in cols:
             conn.execute("ALTER TABLE users ADD COLUMN fp_hash TEXT")
+        if "client_fp" not in cols:
+            conn.execute("ALTER TABLE users ADD COLUMN client_fp TEXT")
+        if "reg_ip" not in cols:
+            conn.execute("ALTER TABLE users ADD COLUMN reg_ip TEXT")
+        # 数据迁移：历史版本的 fp_hash 存的是前端上报的浏览器指纹（sha256，64 位
+        # 十六进制），现行语义是服务端从请求头算出的 32 位指纹。老值统一挪进
+        # client_fp、fp_hash 置空 —— 否则它会以一个再也不会被匹配上的值占住唯一
+        # 索引，而这一行代表哪台设备在库里也再无从判断。
+        for stale in conn.execute(
+            "SELECT id, fp_hash FROM users WHERE fp_hash IS NOT NULL AND LENGTH(fp_hash) <> 32"
+        ).fetchall():
+            conn.execute(
+                "UPDATE users SET client_fp=COALESCE(client_fp, ?), fp_hash=NULL WHERE id=?",
+                (str(stale["fp_hash"]), int(stale["id"])),
+            )
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_fp_hash ON users(fp_hash)")
         conn.execute(
             """
@@ -1571,11 +1624,10 @@ def approved_admin_users() -> List[Dict[str, Any]]:
     return out
 
 
-# ---------------------------------------------------------------------------
-# 管理员首页统计页（全站聚合数据）
-# 只面向 role=admin，路由见 /api/status/stats。聚合较贵（要扫全站各用户
-# 的账号清单与签到日志），故复用 _STATS_CACHE_TTL 缓存，轮询周期同仪表盘。
-# ---------------------------------------------------------------------------
+# ---- 管理员统计聚合 ---------------------------------------------------------
+# 管理员首页的全站聚合数据，仅面向 role=admin，路由见 /api/status/stats。
+# 聚合成本较高（需遍历全站各用户的账号清单与签到日志），故复用仪表盘同款
+# 短 TTL 缓存，前端轮询周期与仪表盘一致。
 _STATS_CACHE_TTL = 3.0
 _admin_stats_cache: Dict[str, Any] = {"t": 0.0, "payload": None}
 _ADMIN_STATS_CACHE_LOCK = threading.Lock()
@@ -1608,7 +1660,7 @@ def build_admin_stats() -> Dict[str, Any]:
     users = list_all_users()
     now = now_local()
 
-    # ---- 总览卡 ----
+    # ---- 总览卡 -------------------------------------------------------------
     all_accounts = admin_account_overview()
     overview = {
         "total_users": len(users),
@@ -1618,7 +1670,7 @@ def build_admin_stats() -> Dict[str, Any]:
         "signed_today": sum(1 for a in all_accounts if (a.get("latest") or {}).get("signed_today")),
     }
 
-    # ---- 注册趋势：近 30 天按注册日期分组 ----
+    # ---- 注册趋势（近 30 天，按注册日期分组） -------------------------------
     reg_days = 30
     reg_counts = {}
     for i in range(reg_days - 1, -1, -1):
@@ -1629,7 +1681,7 @@ def build_admin_stats() -> Dict[str, Any]:
             reg_counts[day] += 1
     registration_trend = [{"date": d, "count": reg_counts[d]} for d in sorted(reg_counts)]
 
-    # ---- 签到效果：近 7 天按结果分类（成功 / 失败 / 轮空） ----
+    # ---- 签到效果（近 7 天，按成功 / 失败 / 轮空分类） ----------------------
     signin_days = 7
     day_keys = [(now.date() - timedelta(days=i)).isoformat() for i in range(signin_days - 1, -1, -1)]
     signin = {k: {"success": 0, "fail": 0, "skip": 0} for k in day_keys}
@@ -1661,21 +1713,35 @@ def build_admin_stats() -> Dict[str, Any]:
     }
 
 
-def notify_admins_approval(username: str) -> None:
-    """新用户注册后，提醒管理员去审核。
+def notify_admins_new_user(user: Dict[str, Any], ip: str = "") -> None:
+    """新用户注册后，推一条消息给每个管理员。
 
-    遍历每个已通过的管理员，取其配置里「已启用且有凭据」的通知渠道发一条
-    「有新的注册申请待审核」。全程安静失败（打日志不抛错）——通知发不出
-    绝不能让注册失败。
+    注册默认**直接生效**，管理员不会在后台"顺手看到"新账号，所以这条通知是唯一
+    能让人及时知道"有人开了账号"的渠道，属于安全边界的一部分而非可选装饰。
+    走 notify.py 的 notice 模式，标题为「新用户注册」；降级回审核时标题改
+    「新用户待审核」，走的是同一套投递逻辑。
+
+    遍历每个已通过的管理员，取其配置里「已启用且有凭据」的通知渠道发一条。
+    全程安静失败（只打日志不抛错）——通知发不出去绝不能让注册失败。
     """
-    if not approved_admin_users():
+    admins = approved_admin_users()
+    if not admins:
         return
+    username = str(user.get("username") or "")
+    needs_review = bool(user.get("needs_review"))
+    if needs_review:
+        title = "新用户待审核"
+        note = "有新的注册申请待审核：%s" % username
+    else:
+        title = "新用户注册"
+        note = "有人注册了新账号：%s" % username
     lines = [
-        "新用户：%s" % username,
+        "账号：%s" % username,
+        "状态：%s" % ("待人工审核（同一设备已注册过）" if needs_review else "已自动开通，可直接登录"),
+        "来源 IP：%s" % (ip or "未记录"),
         "时间：%s" % iso(now_local()),
-        "请到「用户管理」→ 审核 或 拒绝",
     ]
-    for admin in approved_admin_users():
+    for admin in admins:
         try:
             config = load_user_config(admin)
             for product in PRODUCTS:
@@ -1687,20 +1753,129 @@ def notify_admins_approval(username: str) -> None:
                 if not notify.exists():
                     continue
                 env = notification_env(product, config, dirs)
-                cmd = [sys.executable, str(notify), "startup",
-                       "--note", "有新的注册申请待审核"]
+                extra: List[str] = []
                 for line in lines:
-                    cmd.append("--extra")
-                    cmd.append(line)
-                subprocess.run(
-                    cmd, cwd=str(dirs["base"]),
+                    extra.extend(["--extra", line])
+                base = [sys.executable, str(notify)]
+                proc = subprocess.run(
+                    base + ["notice", "--title", title, "--note", note] + extra,
+                    cwd=str(dirs["base"]),
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     timeout=60, env=env,
                 )
+                if proc.returncode != 0:
+                    # 兼容还没升级 notify.py 的旧部署：退回 startup。标题会写成
+                    # 「服务已启动」不太贴切，但正文里信息是全的 —— 把通知弄丢，
+                    # 比措辞不准严重得多。
+                    subprocess.run(
+                        base + ["startup", "--note", note] + extra,
+                        cwd=str(dirs["base"]),
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        timeout=60, env=env,
+                    )
                 # 每个管理员只发一条（用他配置的投递成功的那一条，避免两份产品重复推送）
                 break
         except Exception:
             continue
+
+
+def registration_settings() -> Dict[str, Any]:
+    """注册策略（workbench.json 的 registration 段，缺项按默认值跑）。"""
+    values = dict(DEFAULT_CONFIG["registration"])
+    actual = load_config().get("registration")
+    if isinstance(actual, dict):
+        values.update({key: value for key, value in actual.items() if value is not None})
+    values["auto_approve"] = bool(values.get("auto_approve", True))
+    values["server_fingerprint"] = bool(values.get("server_fingerprint", True))
+    try:
+        values["ip_quota"] = max(0, int(values.get("ip_quota")))
+    except Exception:
+        values["ip_quota"] = int(DEFAULT_CONFIG["registration"]["ip_quota"])
+    try:
+        values["ip_window_hours"] = max(1.0, float(values.get("ip_window_hours")))
+    except Exception:
+        values["ip_window_hours"] = float(DEFAULT_CONFIG["registration"]["ip_window_hours"])
+    return values
+
+
+# 算服务端指纹时看的请求头：挑「同一台机器同一个浏览器稳定、换环境就变」的那些。
+FINGERPRINT_HEADERS = (
+    "User-Agent",
+    "Accept-Language",
+    "Accept-Encoding",
+    "Sec-CH-UA",
+    "Sec-CH-UA-Full-Version-List",
+    "Sec-CH-UA-Platform",
+    "Sec-CH-UA-Platform-Version",
+    "Sec-CH-UA-Mobile",
+    "Sec-CH-UA-Arch",
+    "Upgrade-Insecure-Requests",
+)
+
+
+def server_fingerprint(headers: Any) -> Optional[str]:
+    """由请求头算出服务端指纹（权威的设备判据）。
+
+    ⚠️ 设计取舍（这是整个防多开机制的关键）：这里**只**采信服务端自己看得到的
+    请求头，绝不把前端上报的 browserFingerprint 混进唯一判据。原因很直接 ——
+    客户端字段随时可伪造，一旦它参与去重，攻击者每次换一个随机值就能拿到全新
+    指纹，约束等于不存在。旧实现踩的就是这个坑。
+    前端上报的值另存 client_fp 列，只当风控参考，不参与判断。
+
+    局限也要写清楚：能拿到的只有应用层这几个头，所以「同 IP 段 + 同浏览器
+    版本」的两台机器仍会被算成同一台。这正是不直接拒绝、而是降级人工审核的理由。
+    """
+    parts = []
+    for name in FINGERPRINT_HEADERS:
+        try:
+            value = str(headers.get(name) or "").strip()
+        except Exception:
+            value = ""
+        parts.append("%s=%s" % (name, value))
+    if not any(part.split("=", 1)[1] for part in parts):
+        # 一个头都没有（极端裸请求）：不判指纹，别把所有人算成同一台设备
+        return None
+    secret = str(auth_config().get("secret") or "").encode("utf-8")
+    source = "\n".join(parts).encode("utf-8")
+    # 用 auth.secret 做 HMAC 而不是裸哈希：即使数据库泄露，也没法离线枚举
+    # 请求头组合去反查某行记录是哪台设备。
+    return hmac.new(secret, source, hashlib.sha256).hexdigest()[:32]
+
+
+def normalize_client_fp(value: Any) -> Optional[str]:
+    """前端上报的浏览器指纹：只做格式收敛，**不参与唯一判据**。"""
+    text = str(value or "").strip().lower()
+    if not text or len(text) > 128:
+        return None
+    return text if re.fullmatch(r"[0-9a-z-]{8,128}", text) else None
+
+
+def register_quota(ip: str) -> Tuple[bool, int]:
+    """查注册名额（不是频率）：同 IP 在窗口内最多开 N 个账号。
+
+    只查不记账 —— 用户名重复之类的失败请求不该吃掉名额（见 _rate_allow 的
+    consume 参数）。真正扣减在账号插入成功之后由 register_quota_commit 做。
+    """
+    settings = registration_settings()
+    limit = int(settings["ip_quota"])
+    if limit <= 0:
+        return True, 0
+    return _rate_allow("register", ip, limit, float(settings["ip_window_hours"]) * 3600.0,
+                       consume=False)
+
+
+def register_quota_commit(ip: str) -> None:
+    """账号建好后扣掉一个名额。
+
+    查与扣之间有个极窄的并发窗口，最多让配额多放行一两个账号 —— 对这个
+    场景够用了，不值得为它加一把全局锁把注册串行化。
+    """
+    settings = registration_settings()
+    limit = int(settings["ip_quota"])
+    if limit <= 0:
+        return
+    _rate_allow("register", ip, limit, float(settings["ip_window_hours"]) * 3600.0,
+                consume=True)
 
 
 def validate_username(username: str) -> str:
@@ -1710,42 +1885,87 @@ def validate_username(username: str) -> str:
     return username
 
 
-def create_pending_user(username: str, password: str, fp_hash: Optional[str] = None) -> Dict[str, Any]:
+def register_user(
+    username: str,
+    password: str,
+    client_fp: Optional[str] = None,
+    server_fp: Optional[str] = None,
+    reg_ip: str = "",
+) -> Dict[str, Any]:
+    """注册一个普通账号。
+
+    已去掉「注册即待审核」：默认**直接开通**（status=approved），只有疑似多开
+    —— 同一个服务端指纹已经有**可用**账号 —— 才降级成 pending 走人工审核。
+
+    为什么是降级而不是直接拒绝：公司出口、校园网、运营商 CGNAT 下多台真实机器
+    共用一个 IP，硬拒绝必然误伤；降级只是多一道人工确认，把成本和风险留在
+    管理员这一侧，而不是把真人挡在门外。
+
+    三条机制各管一件事（刻意不让它们互相兼任，否则规则会互相打架）：
+      · fp_hash 唯一索引 → 一台设备最多一个**可用**账号。唯一性只由它承担，
+        而且靠数据库约束兜底，不是靠应用层"先查后插"的竞态；
+      · IP 注册配额     → 一个网络在窗口内最多开 N 个号，管住总量；
+      · 24 小时自动清理 → 收走没人处理、也没上传过凭据的 pending 空壳。
+    因此 pending 行**不写** fp_hash（写 NULL）：它本来就不能登录，占着设备名额
+    没有意义，反而会让"降级"这条路彻底走不通 —— 唯一索引会把第二次申请直接挡死。
+    """
     username = validate_username(username)
     if len(str(password or "")) < 6:
         raise ValueError("密码至少需要 6 位")
-    fp_hash = (str(fp_hash or "").strip() or None)
+
+    settings = registration_settings()
+    client_fp = normalize_client_fp(client_fp)
+    server_fp = str(server_fp or "").strip() or None
+    if not settings["server_fingerprint"]:
+        server_fp = None
+
     now = iso(now_local())
+    status = "approved" if settings["auto_approve"] else "pending"
+
     try:
         with db_connect() as conn:
-            if fp_hash:
-                used = conn.execute(
-                    "SELECT COUNT(*) AS c FROM users WHERE fp_hash=?",
-                    (fp_hash,),
+            if server_fp:
+                # 只有 approved 占设备名额：被拒 / 停用 / 待审都不占坑，
+                # 好让本人整改后仍能以同一台设备重新注册。
+                taken = conn.execute(
+                    "SELECT COUNT(*) AS c FROM users WHERE fp_hash=? AND status='approved'",
+                    (server_fp,),
                 ).fetchone()["c"]
-                if used:
-                    raise ValueError("该设备已注册过账号，一个设备只能注册一个账号")
+                if taken:
+                    status = "pending"
+            # 只有 approved 才写指纹 —— pending 不占设备名额（见上面的说明）
+            stored_fp = server_fp if status == "approved" else None
             cur = conn.execute(
                 """
-                INSERT INTO users (username, password_hash, role, status, created_at, fp_hash)
-                VALUES (?, ?, 'user', 'pending', ?, ?)
+                INSERT INTO users
+                    (username, password_hash, role, status, created_at, approved_at,
+                     fp_hash, client_fp, reg_ip)
+                VALUES (?, ?, 'user', ?, ?, ?, ?, ?, ?)
                 """,
-                (username, password_hash(password), now, fp_hash),
+                (
+                    username,
+                    password_hash(password),
+                    status,
+                    now,
+                    now if status == "approved" else None,
+                    stored_fp,
+                    client_fp,
+                    (str(reg_ip or "").strip()[:64] or None),
+                ),
             )
-            ensure_settings_row(conn, int(cur.lastrowid))
+            user_id = int(cur.lastrowid)
+            ensure_settings_row(conn, user_id)
             conn.commit()
-            row = conn.execute("SELECT * FROM users WHERE id=?", (cur.lastrowid,)).fetchone()
+            row = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
     except sqlite3.IntegrityError:
-        existing = get_user_by_username(username)
-        if existing and existing.get("status") == "pending":
-            raise ValueError("该账号已提交注册，正在等待管理员审核") from None
-        if existing is not None:
-            raise ValueError("该账号已存在") from None
-        # 到这里 username 不冲突，多半是唯一索引 fp_hash 兜住了「同一设备再注册」
-        if fp_hash:
-            raise ValueError("该设备已注册过账号，一个设备只能注册一个账号") from None
-        raise ValueError("该账号已存在") from None
-    return public_user(user_from_row(row) or {})
+        if get_user_by_username(username) is not None:
+            raise ValueError("该账号已存在，请换一个") from None
+        # 用户名没冲突却仍然撞唯一约束：并发下另一个请求抢先占了这个设备名额
+        raise ValueError("该设备刚提交过注册，请稍后再试") from None
+
+    user = user_from_row(row) or {}
+    ensure_user_workspace(user)
+    return {**public_user(user), "needs_review": status != "approved"}
 
 
 def authenticate_user(username: str, password: str) -> Tuple[Optional[Dict[str, Any]], str, int]:
@@ -1879,14 +2099,29 @@ def update_managed_user(admin: Dict[str, Any], user_id: Any, action: str) -> Dic
                 if admin_count <= 1:
                     raise ValueError("至少需要保留一个可登录管理员")
             username = str(target["username"] or "")
+            role = str(target["role"] or "user")
+            target_user = user_from_row(target) or {"id": target_id, "username": username}
+            # 正在跑的签到子进程还在往这个工作区里写凭据/日志。此时删目录只有两种
+            # 结局：Windows 上删不动、Linux 上删出半截树，而脚本会继续跑完并试图给
+            # 一个已不存在的账号发通知。宁可让管理员等一下，也不做半成品删除。
+            running = user_running_task(target_user)
+            if running:
+                raise ValueError(
+                    "该用户有正在运行的签到任务（%s / %s），请等它结束后再删除"
+                    % (running.get("product") or "?", running.get("mode") or "?")
+                )
             conn.execute("DELETE FROM users WHERE id=?", (target_id,))
             conn.commit()
+            # 先落库再删盘：万一删盘失败，账号已经不可登录，不会出现
+            # 「账号还在但目录没了」这种更糟的方向。
+            cleanup = purge_user_assets(target_user)
             return {
                 "id": target_id,
                 "username": username,
-                "role": str(target["role"] or "user"),
+                "role": role,
                 "status": "deleted",
                 "deleted": True,
+                "cleanup": cleanup,
             }
         else:
             raise ValueError("不支持的用户操作")
@@ -2702,16 +2937,30 @@ def load_fired_keys() -> set:
     return {str(item) for item in raw} if isinstance(raw, list) else set()
 
 
-def save_fired_keys(keys: set) -> None:
-    """合并写：别的进程记过的触发点不能被本进程内存里的集合覆盖掉。"""
+def write_fired_keys(keys: set) -> None:
+    """整体覆盖写。用于**删除**触发记录（删号清理）；日常记录请用 save_fired_keys。"""
     try:
-        merged = load_fired_keys() | {str(item) for item in keys}
         RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+        payload = sorted({str(item) for item in keys})
         tmp = FIRED_KEYS_PATH.with_name(FIRED_KEYS_PATH.name + ".tmp")
-        tmp.write_text(json.dumps(sorted(merged), ensure_ascii=False), "utf-8")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False), "utf-8")
         tmp.replace(FIRED_KEYS_PATH)
     except Exception as exc:
         sys.stderr.write("[scheduler] 触发记录写入失败：%s\n" % exc)
+
+
+def save_fired_keys(keys: set) -> None:
+    """合并写：别的进程记过的触发点不能被本进程内存里的集合覆盖掉。"""
+    write_fired_keys(load_fired_keys() | {str(item) for item in keys})
+
+
+def fired_key_scope(key: Any) -> str:
+    """触发记录的键是「分钟|作用域|产品|类型」，取出其中的作用域（u<id> / global）。
+
+    按竖线拆分而不是做子串匹配 —— 子串会踩 u4 / u40 这种前缀混淆。
+    """
+    parts = str(key).split("|")
+    return parts[1] if len(parts) >= 2 else ""
 
 
 def next_run_at(config: Dict[str, Any]) -> Optional[str]:
@@ -2815,10 +3064,9 @@ def scheduler_loop() -> None:
         SCHEDULER_STOP.wait(20)
 
 
-# ---------------------------------------------------------------------------
-# 无凭据账号的自动清理：注册超过 grace、期间从未上传过任何凭据的普通账号，
-# 自动删除（连同其工作区），避免长期堆积空账号占用空间。
-# ---------------------------------------------------------------------------
+# ---- 无凭据账号自动清理 -----------------------------------------------------
+# 注册超过 grace 小时、期间从未上传过任何凭据的普通账号会被自动删除，
+# 连同其工作区一并清除，避免空壳账号长期占用磁盘。
 def user_uploaded_any_credential(user: Dict[str, Any]) -> bool:
     try:
         for product in PRODUCTS:
@@ -2835,15 +3083,165 @@ def remove_user_row(user: Dict[str, Any]) -> None:
         conn.commit()
 
 
-def remove_user_workspace(user: Dict[str, Any]) -> None:
+def remove_user_workspace(user: Dict[str, Any]) -> bool:
+    """删掉 data/users/u<id>/ 整棵树。返回是否真的删了东西。"""
     root = user_workspace_root(user)
     if not root:
-        return
+        return False
     try:
         if root.exists() or root.is_symlink():
             shutil.rmtree(str(root))
+            return True
     except Exception as exc:
         sys.stderr.write("[purge] 删除工作区失败 %s：%s\n" % (root, exc))
+    return False
+
+
+def drop_user_tasks(user_id: Any) -> int:
+    """把内存任务表里属于这个用户的记录摘掉，返回条数。"""
+    try:
+        uid = int(user_id)
+    except Exception:
+        return 0
+    with TASK_LOCK:
+        doomed = [key for key, item in TASKS.items() if int(item.get("user_id") or 0) == uid]
+        for key in doomed:
+            TASKS.pop(key, None)
+    return len(doomed)
+
+
+def user_running_task(user: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """该用户是否有排队/正在跑的任务。删号前必须问一次 —— 见 update_managed_user。"""
+    try:
+        uid = int(user.get("id") or 0)
+    except Exception:
+        return None
+    if not uid:
+        return None
+    with TASK_LOCK:
+        for item in TASKS.values():
+            if int(item.get("user_id") or 0) == uid and str(item.get("status")) in ("queued", "running"):
+                return dict(item)
+    return None
+
+
+def purge_user_scheduler_state(user: Dict[str, Any]) -> Tuple[int, int]:
+    """清掉调度器里属于这个用户的残留状态：触发记录 + 原子占位文件。
+
+    两者都是按 u<id> 分桶的：触发记录 runtime/scheduler-fired.json 的键是
+    「分钟|u<id>|产品|类型」，占位文件 runtime/slots/<键>.fired 同构。删号时不清，
+    它们就以「今天已经跑过」的形式留在盘上；因为 users.id 是 AUTOINCREMENT
+    （不复用），暂时不会串到新账号，但只要哪天换库、导入备份或手工改 id，
+    新账号就会在当天静默不执行 —— 这种问题极难排查，所以删号必须一起清。
+
+    返回 (清掉的触发记录数, 删掉的占位文件数)。
+    """
+    global FIRED_SCHEDULE_KEYS
+    scope = schedule_scope(user)
+    removed_keys = 0
+
+    # 触发记录：先摘内存集合再落盘。这里不能用 save_fired_keys —— 它是合并写，
+    # 只会 union 回来。与调度线程的竞态后果仅仅是「一个已不存在用户的键留在文件里」，
+    # 无实际影响，所以不加锁。
+    try:
+        fired = load_fired_keys()
+        keep = {key for key in fired if fired_key_scope(key) != scope}
+        removed_keys = len(fired) - len(keep)
+        FIRED_SCHEDULE_KEYS = {key for key in FIRED_SCHEDULE_KEYS if fired_key_scope(key) != scope}
+        if removed_keys:
+            write_fired_keys(keep)
+    except Exception as exc:
+        sys.stderr.write("[purge] 清理触发记录失败：%s\n" % exc)
+
+    # 占位文件名做过字符替换（空格、竖线都变成下划线），所以按「_作用域_」的
+    # 分隔符边界匹配，避免 u4 命中 u40。
+    removed_markers = 0
+    slot_dir = RUNTIME_DIR / SLOT_DIRNAME
+    if slot_dir.is_dir():
+        needle = "_%s_" % re.sub(r"[^0-9A-Za-z_.-]", "_", scope)
+        for path in slot_dir.glob("*.fired"):
+            if needle not in ("_" + path.stem + "_"):
+                continue
+            try:
+                path.unlink()
+                removed_markers += 1
+            except Exception:
+                pass
+    return removed_keys, removed_markers
+
+
+def purge_user_assets(user: Dict[str, Any]) -> Dict[str, Any]:
+    """删号时的全部落地清理：工作空间目录 + 调度状态 + 内存任务记录。
+
+    只服务于「真的删号」。被拒绝（rejected）/ 停用（disabled）的账号不走这里 ——
+    那两种状态是可恢复的，目录必须原样保留。
+    """
+    result: Dict[str, Any] = {
+        "user_id": int(user.get("id") or 0),
+        "workspace": "",
+        "workspace_removed": False,
+        "fired_keys": 0,
+        "slot_markers": 0,
+        "tasks_dropped": 0,
+    }
+    root = user_workspace_root(user)
+    if root:
+        result["workspace"] = rel(root)
+    result["tasks_dropped"] = drop_user_tasks(user.get("id"))
+    fired, markers = purge_user_scheduler_state(user)
+    result["fired_keys"] = fired
+    result["slot_markers"] = markers
+    result["workspace_removed"] = remove_user_workspace(user)
+    sys.stderr.write(
+        "[purge] 已清理账号 %s 的全部数据：工作区 %s，触发记录 %s 条，占位 %s 个，任务记录 %s 条\n"
+        % (str(user.get("username") or result["user_id"]), "已删除" if result["workspace_removed"] else "无",
+           fired, markers, result["tasks_dropped"])
+    )
+    return result
+
+
+def orphan_workspace_dirs() -> List[Path]:
+    """列出「盘上有目录、库里没账号」的孤儿工作空间。
+
+    历史版本的「删除用户」只删库不删盘，这些目录会一直留着，里面是已删用户的
+    凭据、日志和归档 —— 既是隐私残留，也会无限占空间。
+    """
+    if not USER_DATA_DIR.is_dir():
+        return []
+    known = {"u%s" % int(item["id"]) for item in list_all_users() if item.get("id")}
+    orphans: List[Path] = []
+    for path in sorted(USER_DATA_DIR.iterdir()):
+        if not path.is_dir() or not re.fullmatch(r"u\d+", path.name):
+            continue
+        if path.name not in known:
+            orphans.append(path)
+    return orphans
+
+
+def purge_orphan_workspaces() -> List[Path]:
+    """删除孤儿工作空间目录。
+
+    安全阀：库里一个账号都没有时不动手 —— 那多半是换了库、指错了 DB 或误删，
+    此时「所有目录都是孤儿」，照删就是灾难。这种情况只报告，由人判断。
+    """
+    orphans = orphan_workspace_dirs()
+    if not orphans:
+        return []
+    if not list_all_users():
+        sys.stderr.write(
+            "[purge] 数据库里没有任何账号，怀疑是换了库或数据库被清空，"
+            "本次不清理这 %s 个孤儿目录；确认无误请手工处理。\n" % len(orphans)
+        )
+        return []
+    removed: List[Path] = []
+    for path in orphans:
+        try:
+            shutil.rmtree(str(path))
+            removed.append(path)
+            sys.stderr.write("[purge] 已删除孤儿工作空间 %s\n" % path)
+        except Exception as exc:
+            sys.stderr.write("[purge] 删除孤儿工作空间失败 %s：%s\n" % (path, exc))
+    return removed
 
 
 def purge_no_credential_users() -> int:
@@ -2868,7 +3266,8 @@ def purge_no_credential_users() -> int:
                PURGE_NO_CREDENTIAL_HOURS / 24.0)
         )
         remove_user_row(user)
-        remove_user_workspace(user)
+        # 走过场的删除最容易漏盘：自动清理和手工删除必须用同一条清理链。
+        purge_user_assets(user)
         removed += 1
     return removed
 
@@ -3219,23 +3618,46 @@ class DashboardHandler(BaseHTTPRequestHandler):
             confirm = str(payload.get("confirm") or payload.get("password_confirm") or "")
             if confirm and not hmac.compare_digest(password, confirm):
                 raise ValueError("两次输入的密码不一致")
-            user = create_pending_user(
+            ip = self.client_ip()
+            settings = registration_settings()
+            allowed, retry = register_quota(ip)
+            if not allowed:
+                json_response(
+                    self,
+                    {
+                        "error": "该网络在 %g 小时内已注册 %s 个账号，已达上限；"
+                                 "如需更多账号请联系管理员"
+                                 % (settings["ip_window_hours"], settings["ip_quota"]),
+                        "retry_after": retry,
+                    },
+                    HTTPStatus.TOO_MANY_REQUESTS,
+                    headers={"Retry-After": str(retry)},
+                )
+                return
+            user = register_user(
                 username,
                 password,
-                fp_hash=str(payload.get("fingerprint") or "").strip(),
+                client_fp=payload.get("fingerprint"),
+                server_fp=server_fingerprint(self.headers),
+                reg_ip=ip,
             )
         except Exception as exc:
             json_response(self, {"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
-        # 提醒管理员去审核；安静失败，不阻塞注册结果返回。
+        # 账号确实建出来了才扣名额 —— 上面任何一步失败都不该消耗注册配额。
+        register_quota_commit(ip)
+        # 告诉管理员有人注册了；安静失败，不阻塞注册结果返回。
         try:
-            notify_admins_approval(user.get("username") or username)
+            notify_admins_new_user(user, ip)
         except Exception:
             pass
+        needs_review = bool(user.get("needs_review"))
         json_response(self, {
             "registered": True,
             "user": user,
-            "message": "注册已提交，请等待管理员审核",
+            "needs_review": needs_review,
+            "message": ("注册已提交，请等待管理员审核" if needs_review
+                        else "注册成功，现在就可以登录"),
         })
 
     def handle_upload(self, body: bytes, user: Dict[str, Any]) -> None:
@@ -3418,10 +3840,22 @@ def main() -> int:
     parser.add_argument("--host", default=os.environ.get("DASHBOARD_HOST", "0.0.0.0"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("DASHBOARD_PORT", "8000")))
     parser.add_argument("--check", action="store_true", help="只输出一次状态 JSON，不启动服务")
+    parser.add_argument("--purge-orphans", action="store_true",
+                        help="删除「数据库里已无账号」的孤儿工作空间目录")
     args = parser.parse_args()
 
     config = ensure_runtime_config()
     init_database(config)
+
+    if args.purge_orphans:
+        removed = purge_orphan_workspaces()
+        if removed:
+            print("已清理 %s 个孤儿工作空间：" % len(removed))
+            for path in removed:
+                print("  - %s" % rel(path))
+        else:
+            print("没有需要清理的孤儿工作空间。")
+        return 0
 
     if args.check:
         print(json.dumps(build_dashboard(), ensure_ascii=False, indent=2, default=str))
@@ -3440,6 +3874,11 @@ def main() -> int:
     print("工作台根目录：%s" % PROJECT_ROOT)
     print("内置脚本目录：%s" % APPS_DIR)
     print("默认管理员：%s（数据库：%s）" % (auth.get("username") or "admin", DB_PATH))
+    orphans = orphan_workspace_dirs()
+    if orphans:
+        print("提示：发现 %s 个孤儿工作空间目录（账号已从库里删除，目录还留在盘上）：%s"
+              % (len(orphans), "、".join(path.name for path in orphans)))
+        print("      里面可能残留已删用户的凭据与日志，可用 `server.py --purge-orphans` 清理。")
     if auth.get("password") == DEFAULT_CONFIG["auth"]["password"]:
         print("安全提醒：当前仍是默认密码，请部署前修改 workbench.json")
     try:

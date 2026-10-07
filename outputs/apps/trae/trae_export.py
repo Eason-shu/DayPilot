@@ -1,7 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# 作者：EasonShu
-r"""导出 TRAE 桌面端的登录凭据 —— 供服务器每日自动签到用。
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 EasonShu
+r"""导出 TRAE 桌面端凭据 —— 供服务器每日签到使用。
+
+与 WorkBuddy 的 export_session.py 思路相同但实现完全独立：TRAE 的登录态藏在
+桌面端的 storage.json 与 iCubeAuthInfo 里，本脚本负责按平台定位这些位置
+（Windows 的 APPDATA、macOS 的 Application Support、Linux 的 ~/.config），
+取出登录态并写出凭据文件。
+
+用法：
+  python trae_export.py [--dir DIR] [--name NAME] [--rename] [--as-new]
+                        [--who] [--storage PATH]
+  --who      只显示当前登录的是谁，不导出
+  --storage  手动指定 storage.json，跳过自动查找
+
+账号 → 文件名的映射记在 trae-account-names.json，同一账号后续沿用同名。
 """
 
 import argparse

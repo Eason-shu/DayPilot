@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# 作者：EasonShu
-"""
-TRAE 桌面凭据的解密 —— 纯 Python 实现，零第三方依赖。
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 EasonShu
+"""TRAE 桌面凭据解密 —— 纯 Python 实现，零第三方依赖。
+
+桌面端把登录态封装成「信封」：6 字节魔数 + 两段混淆密钥 XOR 出的实际密钥 +
+AES-128-CBC 密文。本模块只做解密方向（本项目永远不需要重新加密），对外暴露：
+
+  aes128_cbc_decrypt(key, iv, ciphertext, strip_padding=True)  通用 AES-128-CBC
+  decrypt_envelope(encoded)                                    解 TRAE 信封 → JSON
+
+为什么自己实现 AES：项目承诺零第三方运行依赖，而标准库不提供可用作密码学的
+AES 实现。实现覆盖解密方向的全流程（密钥扩展、逆字节代换、逆行移位、逆列混淆、
+逆轮密钥加、PKCS#7 去填充），优先直白正确而非性能。
 """
 
 import hashlib
@@ -20,7 +30,7 @@ RIGHT_SECRET = bytes([
     160, 224, 59, 77, 174, 42, 245, 176, 200, 235, 187, 60, 131, 83, 153, 97,
     23, 43, 4, 126, 186, 119, 214, 38, 225, 105, 20, 99, 85, 33, 12, 125])
 
-# ---------------------------------------------------------------- AES-128 ---
+# ---- AES-128 ----------------------------------------------------------------
 
 _SBOX = bytes([
     0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
@@ -152,7 +162,7 @@ def aes128_cbc_decrypt(key, iv, ciphertext, strip_padding=True):
     return bytes(_strip_pkcs7(out) if strip_padding else out)
 
 
-# ------------------------------------------------------------- TRAE 信封 ---
+# ---- TRAE 信封 --------------------------------------------------------------
 
 def _secret():
     return bytes(a ^ b for a, b in zip(LEFT_SECRET, RIGHT_SECRET))

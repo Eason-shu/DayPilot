@@ -1,7 +1,28 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# 作者：EasonShu
-r"""TRAE 每日签到 —— 与 WorkBuddy 那套**完全独立**的第二套自动签到。
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 EasonShu
+r"""TRAE 每日签到 —— 与 WorkBuddy 那套完全独立的第二套自动签到。
+
+为什么独立：两款产品的接口形状、错误码语义、凭据结构与请求头要求都不一样，
+共用一层抽象只会让两边都难改。共享的只有「编排方式」这一层思路。
+
+职责：单进程内完成「遍历凭据目录 → 逐个签到 → 写日志」，既是命令行工具，
+也是 Web 工作台（outputs/server.py）的子进程。凭据由 trae_export.py 导出，
+桌面端加密凭据的解密见 trae_crypto.py，续期签名见 trae_ecdsa.py。
+
+用法：
+  python trae_signin.py [mode] [--dir DIR] [--file F] [--order first|last|random]
+                        [--gap SEC] [--retry N] [--dry-run]
+  mode：silent / silent-poll / status / doctor
+
+环境变量：
+  TRAE_SESSION_DIR / TRAE_SESSION_FILE   凭据位置
+  TRAE_ORDER                             账号轮换顺序（默认 first）
+  TRAE_RETRY / TRAE_RETRY_DELAY          失败重试次数与间隔
+  TRAE_NO_SPOOF=1                        关闭客户端 UA 与出口 IP 伪装
+  TRAE_NO_FINGERPRINT=1                  关闭设备指纹头
+  TRAE_DEVICE_BRAND / TRAE_DEVICE_TYPE / TRAE_OS_VERSION   覆盖指纹取值
 """
 
 import argparse
@@ -20,7 +41,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
-# ---------------------------------------------------------------- 常量 ----
+# ---- 常量 -------------------------------------------------------------------
 CLAIM_PATH = "/trae/api/v2/ug/checkin_credits/claim"
 # 只读探活用：返回今天签没签、今天能领多少。不发请求也能判断凭据死活。
 STATUS_PATH = "/trae/api/v2/ug/checkin_credits/status"
@@ -50,16 +71,14 @@ ORDER_FILE = "trae-order.json"
 
 UA = "axios/1.7.7"
 
-# ---------------------------------------------------------------------------
-# 模拟客户端 / 出口 IP：签到本质是在替客户端做"模拟登录"，请求若永远顶着同一
-# 个 UA、同一条 XFF，服务端一眼就能认出是脚本。这里给签到请求随机伪装成一台
-# 现实桌面设备（Electron/Chrome 观感）与一个公网观感的出口 IP 链。
+# ---- 客户端与出口 IP 伪装 ---------------------------------------------------
+# 签到本质是替桌面客户端完成一次「模拟登录」。若请求始终顶着同一个 UA、
+# 同一条 XFF，服务端很容易识别为脚本，故这里为每次请求随机挑选一组
+# 「真实桌面设备 + 公网观感出口 IP 链」的伪装头。
 #
-#   真正的源 IP 由本机网络栈决定，这里只在应用层补代理常用头，对端是否采信
-#   不可控；主要价值是让每次请求的"客户端 + 出口"看起来更接近真人。
-#
-#   置 TRAE_NO_SPOOF=1 可整体关闭，退回固定 UA、不发伪装头。
-# ---------------------------------------------------------------------------
+# 能力边界：真正的源 IP 由本机网络栈决定，这里只能在应用层补代理常用头，
+# 对端是否采信不可控；其价值是让请求看起来更接近真人，而非隐匿来源。
+# 环境变量 TRAE_NO_SPOOF=1 可整体关闭，退回固定 UA 且不发伪装头。
 _SPOOF_LOCKS = {}
 
 # Electron/Chromium 观感的桌面 UA 模板，随机拼版本，贴近 TRAE 官方桌面端。
@@ -152,7 +171,7 @@ DEFAULT_RETRY = 3
 DEFAULT_RETRY_DELAY = 60.0
 
 
-# ------------------------------------------------------------ 基础工具 ----
+# ---- 基础工具 ---------------------------------------------------------------
 def _utf8_console():
     for stream in (sys.stdout, sys.stderr):
         try:
@@ -279,7 +298,7 @@ def dig(obj, *keys):
     return None
 
 
-# ------------------------------------------------------------ 凭据装载 ----
+# ---- 凭据装载 ---------------------------------------------------------------
 def normalize_credential(raw):
     """把导出的 json 摊平成一张统一的凭据表。
 
@@ -357,7 +376,7 @@ def need_renew(cred):
     return left <= RENEW_SECONDS_FLOOR or left <= RENEW_DAYS * 86400.0
 
 
-# -------------------------------------------------------------- 续期 ------
+# ---- 续期 -------------------------------------------------------------------
 def refresh_credential(cred, timeout=60):
     """用 refreshToken 换新 token。返回 (新凭据片段 dict, 备注, 是否成功)。
 
@@ -482,7 +501,7 @@ def write_secure(path, data):
         pass
 
 
-# -------------------------------------------------------------- 签到 ------
+# ---- 签到 -------------------------------------------------------------------
 def _host_brand():
     """机型。Windows 读注册表，取不到返回 "PC"；其它平台用架构名。"""
     if platform.system() == "Windows":
@@ -736,13 +755,11 @@ def probe(cred, timeout=20):
 def sign_in(cred, args):
     """领取流程：先只读确认没签过 → 再领取（带重试）→ 成功后复核。
 
-    为什么要绕这一圈：claim 接口对**今天已经签到的账号同样回 code:0 success**
+    顺序不能颠倒：claim 接口对**今天已经签到的账号同样回 code:0 success**
     （实测：同一账号连打两次都是 success，把 x-device-id 换成完全无关的随机码
-    也还是 success）。所以「接口返回成功」本身证明不了新领到了什么 ——
-    原来的实现就因此会对已签到的账号假报「签到成功」。
-
-    解法不是在成功后猜，而是**在发领取之前用 status 把已签到的挡在门外**：
-    这样一来消除假阳性，二来少发一次没有意义的请求。
+    也还是 success）。所以「接口返回成功」证明不了这次真的领到了什么，必须在
+    发领取**之前**用 status 把已签到的挡在门外 —— 既消除假阳性，也省下一次
+    无意义的请求。
     """
     checked, today, err = checkin_state(cred, timeout=args.timeout)
 
@@ -788,7 +805,7 @@ def sign_in(cred, args):
     return result, rec
 
 
-# -------------------------------------------------------------- 日志 ------
+# ---- 日志 -------------------------------------------------------------------
 def append_log(log_path, record):
     """写成 notify.py 认得的格式：[时间] {json}。"""
     os.makedirs(os.path.dirname(os.path.abspath(log_path)), exist_ok=True)
@@ -806,7 +823,7 @@ def append_multi(path, summary):
         fh.write(json.dumps(summary, ensure_ascii=False, sort_keys=True) + "\n")
 
 
-# -------------------------------------------------------------- 主流程 ----
+# ---- 主流程 -----------------------------------------------------------------
 def apply_order(accounts, args):
     """决定账号的处理顺序。
 

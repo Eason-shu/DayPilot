@@ -1,7 +1,28 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# 作者：EasonShu
-"""WorkBuddy 签到通知器 —— 启动提醒 + 签到结果提醒。
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 EasonShu
+"""WorkBuddy 签到通知器 —— 把签到结果按配置投递到外部渠道。
+
+输入是签到脚本写下的日志（单账号日志与 multi.log 汇总），输出是一条消息。
+本脚本不参与签到，只做「读日志 → 判等级 → 渲染 → 投递 → 记状态」，
+因此可以在签到结束后单独重跑，也可以离线预览。
+
+子命令：
+  check     扫描新增日志，按规则决定推不推、推哪几条（定时任务用这个）
+  startup   发送「服务已启动」提醒
+  notice    发送业务通知（如新用户注册），标题由 --title 指定
+  test      发送一条测试消息，用于验证渠道配置
+  status    打印当前渠道配置与投递状态
+
+渠道与凭据来源（优先级从高到低）：命令行参数 → 环境变量 → config/notify.json。
+环境变量统一用 WB_NOTIFY_ 前缀：KEY / URL / CHANNEL / ON / MULTI_LOG / STATE。
+支持 Server酱、飞书、企业微信、Bark 与通用 Webhook，渠道差异见 references/notification.md。
+
+关键设计：投递进度记在 notify_state.json —— 每个日志文件记一条「已消费字节
+偏移」，只读偏移之后的新增内容。因此本脚本可以随意重跑而不会重复推送；文件被
+清空或轮转（当前大小 < 偏移）时偏移归零重读，新增账号的日志从 0 开始读，已有
+账号继续沿用旧偏移（否则会把当天历史记录重新汇总一次）。
 """
 
 import argparse
@@ -43,16 +64,18 @@ LEVEL_TEXT = {
     "info": "运行记录",
     "startup": "服务已启动",
     "test": "测试消息",
+    "notice": "通知",
     "digest": "本轮签到汇总",
 }
 LEVEL_COLOR = {
     "success": "green", "already": "blue", "error": "red", "gain": "turquoise",
-    "info": "grey", "startup": "blue", "test": "blue", "digest": "green",
+    "info": "grey", "startup": "blue", "test": "blue", "notice": "blue",
+    "digest": "green",
 }
 # 状态字形：微信 / iOS 通知栏里唯一能一眼区分结果的东西。WB_NOTIFY_GLYPH=0 可关掉。
 LEVEL_GLYPH = {
     "success": "✅", "already": "☑️", "error": "⚠️", "gain": "🎁",
-    "info": "ℹ️", "startup": "🚀", "test": "🧪", "digest": "✅",
+    "info": "ℹ️", "startup": "🚀", "test": "🧪", "notice": "📢", "digest": "✅",
 }
 MARK_OK = "✅"
 MARK_BAD = "⚠️"
@@ -61,7 +84,7 @@ MARK_BAD = "⚠️"
 RESULT_LABEL = {
     "CLAIMED": "已领取", "SUCCESS": "成功", "ALREADY": "今日已签",
     "INACTIVE": "活动未开始", "AUTH_READY": "待领取", "GROWTH": "成长中心",
-    "DIGEST": "本轮汇总", "STARTUP": "启动", "TEST": "测试消息",
+    "DIGEST": "本轮汇总", "STARTUP": "启动", "TEST": "测试消息", "NOTICE": "通知",
     "ERROR": "执行出错", "UNKNOWN": "未知结果", "NETWORK": "网络异常",
     "TIMEOUT": "请求超时", "NO_AUTH": "未找到凭据", "NO_SESSION": "凭据无效",
     "AUTH_ERROR": "认证失败", "AUTH_REJECTED": "认证被拒", "FORBIDDEN": "无权限",
@@ -85,7 +108,7 @@ MULTI_MUTATING_MODES = {
 }
 
 
-# --------------------------------------------------------------------------- 配置
+# ---- 配置 -------------------------------------------------------------------
 
 # 配置文件键名兼容：短名（config/notify.json 里推荐写这种）与长名等价
 _CFG_KEY_ALIASES = {
@@ -225,7 +248,7 @@ def resolve_channel():
     return "none"
 
 
-# --------------------------------------------------------------------------- 状态
+# ---- 状态 -------------------------------------------------------------------
 
 def load_state(path):
     try:
@@ -250,7 +273,7 @@ def save_state(path, state):
         return False
 
 
-# --------------------------------------------------------------------------- 日志解析
+# ---- 日志解析 ---------------------------------------------------------------
 
 def parse_line(line):
     m = LINE_RE.match(line.strip())
@@ -359,7 +382,7 @@ def read_multi_log(path, offset, max_age_hours=None, now=None):
     return items, new_offset
 
 
-# --------------------------------------------------------------------------- 分类
+# ---- 分类 -------------------------------------------------------------------
 
 def classify(rec):
     """返回 (level, 是否值得推送的候选)。"""
@@ -368,6 +391,9 @@ def classify(rec):
         return "error", True
     if result == "DIGEST":
         return "digest", True
+    if result == "NOTICE":
+        # 工作台发来的通用业务通知（新用户注册等），与签到链路无关，永远推送。
+        return "notice", True
     if result == "STARTUP":
         return "startup", True
     if result == "TEST":
@@ -464,7 +490,7 @@ def make_digest(records, failures=None):
     }
 
 
-# --------------------------------------------------------------------------- 渲染
+# ---- 渲染 -------------------------------------------------------------------
 
 def _title_prefix():
     return cfg("notify_group", "WorkBuddy") or "WorkBuddy"
@@ -542,6 +568,9 @@ def build_headline(rec):
     level = classify(rec)[0]
     if level == "startup":
         return "服务已启动"
+    if level == "notice":
+        # 业务通知的标题由调用方给（--title），没给才回落到 report。
+        return (rec.get("notice_title") or rec.get("report") or "通知").strip() or "通知"
     if rec.get("digest"):
         return rec.get("report") or LEVEL_TEXT.get(level, "本轮签到汇总")
 
@@ -706,9 +735,8 @@ def render_markdown(rec, footer_style="md"):
     head = build_summary(rec) or build_headline(rec)
     body = "**%s**" % (("%s %s" % (glyph, head)) if glyph else head)
     detail = build_detail_lines(rec)
-    # 「处理」建议升级成 Markdown 引用块：在列表里它只是普通一行文本，
-    # 改成 `> **处理**…` 后 Server酱/网页会渲染出左边竖线 + 浅底，
-    # 一眼能扫到"要我做什么"，而不是混在账号明细里
+    # 「处理」建议渲染成 Markdown 引用块：Server酱与网页端会把 `> **处理**…`
+    # 画成左边竖线 + 浅底，一眼能扫到"要我做什么"，而不是混在账号明细里。
     detail = ["> %s" % ln if ln.startswith("**处理**") else ln
               for ln in detail]
     if detail:
@@ -776,7 +804,7 @@ def render_wecom(rec):
             "markdown": {"content": render_markdown(rec, footer_style="wecom")}}
 
 
-# --------------------------------------------------------------------------- 发送
+# ---- 发送 -------------------------------------------------------------------
 
 def _http_post(url, payload, form=False):
     if form:
@@ -808,8 +836,8 @@ def _http_get(url):
         return 0, "%s: %s" % (type(e).__name__, e)
 
 
-# Server酱有两代产品，端点不同，SendKey 不通用 —— 必须按前缀路由，用错端点会
-# 返回「成功」但消息根本不投递（踩过这个坑，见 references/notification.md）。
+# Server酱有两代产品，端点不同、SendKey 不通用 —— 必须按前缀路由。用错端点的
+# 特征是接口返回「成功」但消息根本不投递，成因与排查见 references/notification.md。
 SC_TURBO_URL = "https://sctapi.ftqq.com/%s.send"          # Server酱 Turbo，SCT 开头，可推微信
 SC3_URL = "https://%s.push.ft07.com/send/%s.send"          # Server酱³，sctp 开头，只推 SC3 App
 SC3_RE = re.compile(r"^sctp(\d+)t", re.I)
@@ -924,8 +952,8 @@ def send(channel, rec, dry_run=False):
         base = (cfg("notify_url") or "https://api.day.app").rstrip("/")
         if not key:
             return False, "缺少 WB_NOTIFY_KEY"
-        # POST /push：正文走 body，不再塞进 URL —— 多账号汇总正文挺长，
-        # 塞 URL 有被截断的风险。老版本自建服务没有 /push，下面会退回 GET。
+        # 正文走 body 而不是 URL —— 多账号汇总正文挺长，走 URL 会被截断。
+        # 老版本自建服务没有 /push，下方会退回 GET。
         level_name = "timeSensitive" if classify(rec)[0] == "error" else "active"
         body_text = build_bark_body(rec)
         group = cfg("notify_group", "WorkBuddy")
@@ -972,7 +1000,7 @@ def send(channel, rec, dry_run=False):
     return False, "未知渠道：%s" % channel
 
 
-# --------------------------------------------------------------------------- 命令
+# ---- 命令 -------------------------------------------------------------------
 
 def _collect_offsets(state, paths):
     """返回 {路径: offset}，兼容旧版单 offset 的 state。"""
@@ -1119,6 +1147,31 @@ def cmd_startup(args):
     return 0 if ok else 1
 
 
+def cmd_notice(args):
+    """发一条通用业务通知（新用户注册、管理员提醒等），与签到结果无关。
+
+    和 startup 的区别：标题由 --title 指定，不会顶着一句「服务已启动」——
+    工作台拿它来告诉管理员"有人注册了"。正文摘要走 --note，其余信息走
+    可重复的 --extra，渲染管线（markdown / 飞书 / 企微 / Bark / webhook）
+    全部复用，不需要为它单独写模板。
+    """
+    channel = resolve_channel()
+    rec = {
+        "_ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "result": "NOTICE",
+        "notice_title": (args.title or "").strip() or "通知",
+        "report": (args.note or "").strip(),
+        "needs_attention": False,
+        "extra": list(args.extra or []),
+    }
+    if channel == "none":
+        print("未配置通知渠道，业务通知未发送（配好 SENDKEY 或 WB_NOTIFY_CHANNEL 即可）。")
+        return 0
+    ok, detail = send(channel, rec, dry_run=args.dry_run)
+    print("[%s] %s -> %s" % ("OK" if ok else "FAIL", build_title("notice", rec), detail))
+    return 0 if ok else 1
+
+
 def cmd_test(args):
     channel = resolve_channel()
     demo = {
@@ -1185,7 +1238,7 @@ def cmd_status(args):
 
 
 def build_parser():
-    ap = argparse.ArgumentParser(description="WorkBuddy 签到通知器（启动提醒 + 签到结果提醒）")
+    ap = argparse.ArgumentParser(description="WorkBuddy 签到通知器（启动提醒 + 签到结果提醒 + 业务通知）")
     sub = ap.add_subparsers(dest="cmd")
 
     def add_common(p):
@@ -1205,6 +1258,12 @@ def build_parser():
     add_common(p_start)
     p_start.add_argument("--note", help="正文摘要，例如「多账号 3 个」")
     p_start.add_argument("--extra", action="append", help="附加信息行（可重复）")
+
+    p_notice = sub.add_parser("notice", help="发送一条业务通知（新用户注册等）")
+    add_common(p_notice)
+    p_notice.add_argument("--title", help="通知标题，例如「新用户注册」")
+    p_notice.add_argument("--note", help="正文摘要")
+    p_notice.add_argument("--extra", action="append", help="附加信息行（可重复）")
 
     p_test = sub.add_parser("test", help="发一条测试通知")
     add_common(p_test)
@@ -1226,6 +1285,8 @@ def main(argv=None):
         return cmd_check(args)
     if cmd == "startup":
         return cmd_startup(args)
+    if cmd == "notice":
+        return cmd_notice(args)
     if cmd == "test":
         return cmd_test(args)
     if cmd == "status":

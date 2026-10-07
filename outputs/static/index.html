@@ -1,5 +1,12 @@
 <!doctype html>
-<!-- 作者：EasonShu -->
+<!-- SPDX-License-Identifier: MIT · Copyright (c) 2026 EasonShu -->
+<!--
+  DayPilot · 页面骨架
+
+  纯静态页面，无构建步骤：结构在本文件，样式在 styles.css，交互在 app.js。
+  本文件只摆放骨架与文案（唯一的例外是第 16 行的 Tailwind 主题配置），业务逻辑
+  一律不写在这里；表单元素通过 id 与 app.js 约定，新增或改名时请同步搜索 app.js。
+-->
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
@@ -22,9 +29,9 @@
 </head>
 <body class="locked min-h-screen bg-slate-50 text-slate-900 font-sans antialiased">
 
-  <!-- ============================================================
+  <!-- =====================================================================
        登录屏
-       ============================================================ -->
+       ================================================================= -->
   <section id="loginScreen" class="login-screen min-h-screen flex items-center justify-center px-6 py-10 overflow-hidden">
     <div class="login-shell">
       <div class="login-card-wrap w-full max-w-md">
@@ -73,7 +80,7 @@
               <span aria-hidden="true"></span>
               <em>记住我</em>
             </label>
-            <span class="auth-hint">注册账号需审核</span>
+            <span class="auth-hint">注册后可直接登录</span>
           </div>
           <button type="submit" data-state="idle" class="primary-btn auth-submit">
             <span class="btn-label inline-flex items-center gap-2">
@@ -92,7 +99,7 @@
         <form id="registerForm" autocomplete="on" class="auth-form register-form" hidden>
           <div class="auth-form-title">
             <div>
-              <h2>申请新账号</h2>
+              <h2>注册新账号</h2>
             </div>
             <button id="showLogin" type="button" class="auth-link">返回登录</button>
           </div>
@@ -141,15 +148,11 @@
 
         <div class="auth-switch">
           <span>没有账号？</span>
-          <button id="showRegister" type="button">申请注册</button>
+          <button id="showRegister" type="button">注册账号</button>
         </div>
         <p id="loginMessage" class="login-message" hidden></p>
         <p class="login-disclaimer">
-          本项目为作者的学习研究工具，旨在技术交流、互相学习，仅供参考。
-          登录即同意托管：凭据由本服务代管签到。可在「账号」中随时停用或删除撤回，请遵守平台规则与法律法规。
-        </p>
-        <p class="login-note login-note--warn">
-          注册后 24 小时内未上传凭据，账号将被自动删除以节省空间。
+          学习研究工具，仅供参考。登录即同意由本服务代管凭据，可随时停用或删除；注册后 24 小时未上传凭据将自动删除，同设备多号注册转人工审核。
         </p>
       </div>
       </div>
@@ -215,7 +218,7 @@
             <small>4 步完成托管</small>
           </div>
           <ol class="guide-steps">
-            <li><b>1</b><span><strong>申请账号</strong><em>注册后等待管理员审核</em></span></li>
+            <li><b>1</b><span><strong>注册账号</strong><em>注册后即可直接登录</em></span></li>
             <li><b>2</b><span><strong>导出凭据</strong><em>在本机运行对应导出工具</em></span></li>
             <li><b>3</b><span><strong>上传账号</strong><em>进入工作台添加 WorkBuddy / TRAE</em></span></li>
             <li><b>4</b><span><strong>配置自动化</strong><em>设置时间计划与消息通知</em></span></li>
@@ -236,9 +239,9 @@
     </div>
   </section>
 
-  <!-- ============================================================
+  <!-- =====================================================================
        工作台
-       ============================================================ -->
+       ================================================================= -->
   <div id="console" class="app-shell" hidden>
 
     <!-- 顶栏 -->
@@ -414,9 +417,9 @@
          服务连不上改由顶栏副标题 + 状态点变灰表达。 -->
   </div>
 
-  <!-- ============================================================
+  <!-- =====================================================================
        抽屉 & 弹窗
-       ============================================================ -->
+       ================================================================= -->
   <div id="drawerMask" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40" hidden></div>
   <aside id="drawer" class="fixed z-50 top-0 right-0 w-[min(520px,94vw)] h-screen bg-white shadow-2xl shadow-slate-900/20 flex flex-col overflow-hidden" hidden aria-label="详情面板">
     <header class="flex items-start justify-between gap-4 px-5 sm:px-6 py-5 border-b border-slate-200">
@@ -541,6 +544,6 @@
   <!-- 全局通知 -->
   <div id="toast" class="toast-viewport" aria-live="polite" aria-atomic="false"></div>
 
-  <script src="/app.js?v=20261006-split-v21"></script>
+  <script src="/app.js?v=20261007-purge-user-assets-v23"></script>
 </body>
 </html>

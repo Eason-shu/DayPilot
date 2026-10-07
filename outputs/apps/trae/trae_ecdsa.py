@@ -1,14 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# 作者：EasonShu
-"""
-ECDSA P-256 签名（纯 Python，零依赖）—— 只为 TRAE 凭据续期用
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 EasonShu
+"""ECDSA P-256 签名 —— 纯 Python 实现，只为 TRAE 凭据续期服务。
+
+续期接口要求用设备私钥对请求载荷签名，私钥以 PEM 形式存放。标准库没有椭圆
+曲线签名能力，故在此实现最小可用子集：
+
+  load_private_scalar(pem)   解析 PEM 私钥并校验曲线
+  curve_matches(pem)         只判断曲线是否为 P-256，不暴露私钥内容
+  sign(payload, pem, k=None) 返回 DER 编码的签名
+  sign_b64(payload, pem)     返回 base64 签名，便于直接放进请求体
+
+只实现签名（不做验签），随机数 k 用 os.urandom 拒绝采样生成。
 """
 
 import hashlib
 import os
 
-# ---- NIST P-256（prime256v1 / secp256r1）曲线参数 ----
+# ---- NIST P-256（prime256v1 / secp256r1）曲线参数 ---------------------------
 P = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff
 A = 0xffffffff00000001000000000000000000000000fffffffffffffffffffffffc  # -3 mod p
 B = 0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b
@@ -19,7 +29,7 @@ N = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551
 P256_OID = bytes([0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07])
 
 
-# ------------------------------------------------------------ 曲线运算 ---
+# ---- 曲线运算 ---------------------------------------------------------------
 def _inv_mod(x, m):
     """模逆（扩展欧几里得）。"""
     if x == 0:
@@ -83,7 +93,7 @@ def scalar_mult(k, pt=(GX, GY)):
     return result
 
 
-# ------------------------------------------------------------- DER 工具 ---
+# ---- DER 工具 ---------------------------------------------------------------
 def _der_read_len(data, i):
     first = data[i]
     i += 1
@@ -130,7 +140,7 @@ def _der_signature(r, s):
     return b"\x30" + _der_len(len(body)) + body
 
 
-# ------------------------------------------------------------ PEM 解析 ---
+# ---- PEM 解析 ---------------------------------------------------------------
 def _der_seq_body(data):
     """给一串以 SEQUENCE 开头的 DER，返回它的内容（去掉 tag+长度头）。"""
     if not data or data[0] != 0x30:
@@ -191,7 +201,7 @@ def curve_matches(pem):
     return P256_OID in base64.b64decode(text)
 
 
-# -------------------------------------------------------------- ECDSA ----
+# ---- ECDSA ------------------------------------------------------------------
 def sign(payload, private_key_pem, k=None):
     """对 payload（bytes）做 ECDSA-SHA256 签名，返回 DER 签名的 base64 字符串。
 

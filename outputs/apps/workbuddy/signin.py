@@ -1,7 +1,32 @@
-# 作者：EasonShu
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 EasonShu
+"""WorkBuddy 每日签到内核 —— 单账号执行体。
 
-"""
-WorkBuddy 每日签到自动领取脚本。
+职责边界：本脚本只处理「一个账号」的一次运行；多账号编排在 multi_run.py，
+Web 工作台（outputs/server.py）以子进程方式调用二者。
+
+一次运行做的事：
+  1. 定位本机凭据（桌面端写入的 auth 文件；Linux 走 CodeBuddy CLI 的路径）
+  2. 按命令执行签到 / 成长中心 / 补登卡
+  3. 用 emit() 把结果写进日志或 stdout —— 这是与调用方之间的唯一协议
+
+两条不可动摇的约束：
+  · 时间预算   计划任务跑满 ExecutionTimeLimit 会被系统直接杀掉，届时结果还
+               没落盘。故自设更小的预算（DEFAULT_BUDGET_SECONDS 等），保证
+               总能走到 emit() 那一步。预算常量与计划任务时限一一对应。
+  · 结果必达   无窗口（pythonw）运行下 stdout 是黑洞，异常又不会有人看见，
+               所以任何失败路径都必须由 emit() 落到日志文件。
+
+用法：
+  python signin.py <命令>
+  命令：auto / silent / growth / silent-poll / silent-growth / status / claim /
+        all / doctor
+
+环境变量：
+  WORKBUDDY_AUTH_FILE   显式指定凭据文件，跳过自动查找
+  WORKBUDDY_NO_SPOOF=1  关闭客户端 UA 与出口 IP 伪装
 """
 
 import base64
@@ -42,8 +67,8 @@ CODE_BUDGET_OUT = -2   # 本次运行的时间预算已耗尽，主动放弃后�
 # 这四个常量与 install-windows.ps1 里的 ExecutionTimeLimit 一一对应，改一处就要改另一处。
 DEFAULT_BUDGET_SECONDS = 420.0
 MAX_BUDGET_SECONDS = 540.0          # 签到任务 PT10M = 600s - 60s
-# 轮询任务如今也负责补签（见 run_daily），预算比"只跑成长中心"时期宽一些，好让
-# 冷启动重试跑得完；但仍远小于 PT5M，跑不完就早收尾、四小时后再来。
+# 轮询任务如今也负责补签（见 run_daily），因此预算比单纯跑成长中心时要宽，好让冷
+# 启动重试跑得完；但仍远小于 PT5M，跑不完就早收尾、四小时后再来。
 POLL_BUDGET_SECONDS = 180.0
 POLL_MAX_BUDGET_SECONDS = 240.0     # 轮询任务 PT5M = 300s - 60s
 # 每轮最多用掉几张补登卡。卡是稀缺资源（上限 4 张），而这条写路径还没被真实响应
@@ -51,10 +76,10 @@ POLL_MAX_BUDGET_SECONDS = 240.0     # 轮询任务 PT5M = 300s - 60s
 MAKEUP_MAX_PER_RUN = 1
 REQUEST_TIMEOUT = 30
 # 网络类失败的退避节奏（秒）。定时任务最容易撞上的就是"刚开机/刚唤醒"：WiFi 重连、
-# DHCP 续租、VPN 拨通往往要几十秒，而原来的策略是"5 秒后再试一次"——两次都撞在同
-# 一堵墙上，420 秒预算只花掉 5 秒就判了当天死刑。退避到分钟级才真正跨得过这个窗口：
-# 最多 6 次尝试摊开约 3.5 分钟，仍在签到任务的预算内。实际跑几轮由剩余预算决定
-# （见 _request_with_retry 的守卫），轮询任务预算短，会自动少跑几轮。
+# DHCP 续租、VPN 拨通往往要几十秒。退避必须到分钟级才跨得过这个窗口 —— 秒级重试两
+# 次都撞在同一堵墙上，420 秒预算只花掉 5 秒就判了当天死刑。最多 6 次尝试摊开约 3.5
+# 分钟，仍在签到任务的预算内。实际跑几轮由剩余预算决定（见 _request_with_retry 的
+# 守卫），轮询任务预算短，会自动少跑几轮。
 NETWORK_RETRY_DELAYS = (5, 15, 30, 60, 90)
 # 5xx 是服务端抖动，不是本机网络没就绪，短促重试即可——干等几分钟既救不了它，
 # 还会把预算耗光，让后面的成长中心一个都跑不成。
@@ -642,16 +667,14 @@ def build_headers(session):
     return headers
 
 
-# ---------------------------------------------------------------------------
-# 模拟客户端 / 出口 IP：签到本质是在替客户端做"模拟登录"，请求若永远顶着同一
-# 个 UA、同一条 XFF，服务端一眼就能认出是脚本。这里给签到请求随机伪装成一台
-# 现实桌面设备（Chrome/Edge 观感）与一个公网观感的出口 IP 链。
+# ---- 客户端与出口 IP 伪装 ---------------------------------------------------
+# 签到本质是替桌面客户端完成一次「模拟登录」。若请求始终顶着同一个 UA、
+# 同一条 XFF，服务端很容易识别为脚本，故这里为每次请求随机挑选一组
+# 「真实桌面设备 + 公网观感出口 IP 链」的伪装头。
 #
-#   真正的源 IP 由本机网络栈决定，这里只在应用层补代理常用头，对端是否采信
-#   不可控；主要价值是让每次请求的"客户端 + 出口"看起来更接近真人。
-#
-#   置 WORKBUDDY_NO_SPOOF=1 可整体关闭，退回固定 UA、不发伪装头。
-# ---------------------------------------------------------------------------
+# 能力边界：真正的源 IP 由本机网络栈决定，这里只能在应用层补代理常用头，
+# 对端是否采信不可控；其价值是让请求看起来更接近真人，而非隐匿来源。
+# 环境变量 WORKBUDDY_NO_SPOOF=1 可整体关闭，退回固定 UA 且不发伪装头。
 _SPOOF_CACHE = {}
 
 def _spoof_ua():
@@ -1196,9 +1219,9 @@ def run_growth(headers, endpoint):
                 # 真实契约（2026-09 从桌面端成长中心 H5 的 growthSpace chunk 读出）：
                 #   accept_status: not_accepted | accepted | in_progress | completed | claimed
                 #   接单 POST /tasks/accept  body {"task_codes": [code, ...]}   ← 复数数组
-                #        （旧的单数 {"task_code": x} 在新服务端一律 400 invalid request）
+                #        服务端只认复数形式，单数 {"task_code": x} 一律 400 invalid request
                 #   领奖 POST /tasks/{task_code}/claim   ← 路径带 code、body 空
-                #        （旧版拿 /tasks/accept 当领奖用，同样 400）
+                #        /tasks/accept 不能当领奖用，同样 400
                 titles = {t.get("task_code"): t.get("title", t.get("task_code")) for t in tasks}
                 pending = [t.get("task_code") for t in tasks
                            if t.get("task_code") and not t.get("locked")
@@ -1643,7 +1666,8 @@ def run_daily(headers, endpoint):
     if gout.get("credits_gained"):
         out["report"] += "；" + gout["report"]
     # run_growth 只在"确有硬失败且一件都没成"时返回非 0（无可领取项、4xx 业务规则
-    # 均返回 0），直接透传即可——之前按 result 枚举漏了 result=GROWTH 的整体失败
+    # 均返回 0），所以这里直接透传它的任务码，不要再按 result 枚举分类 —— 枚举会漏
+    # 掉 result=GROWTH 这类整体失败。
     if gcode != 0 and code == 0:
         code = gcode
     out["needs_attention"] = code != 0

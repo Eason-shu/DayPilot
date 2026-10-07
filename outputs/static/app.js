@@ -1,13 +1,20 @@
-/* 作者：EasonShu
+/* SPDX-License-Identifier: MIT
+   Copyright (c) 2026 EasonShu
    =========================================================================
-   DayPilot · 前端逻辑（Tailwind 版）
-   后端契约（outputs/server.py）保持不变：
-     GET  /api/auth/session | /api/status | /api/admin/users | /healthz
-     POST /api/auth/login | /api/auth/register | /api/auth/logout | /api/run
-          /api/accounts/upload | /api/accounts/toggle | /api/accounts/archive
-          /api/accounts/delete | /api/schedules | /api/notifications
-          /api/admin/users/update
-   ========================================================================= */
+   DayPilot · 前端逻辑（无构建步骤，浏览器直接加载本文件）
+
+   与后端 outputs/server.py 的契约（实现见其中的 DashboardHandler）：
+     /api/status/<切片>     读接口，按页面按需拉取：overview / accounts /
+                            schedules / notifications / recent / tasks /
+                            stats / admin
+     /api/auth/*            会话、登录、注册、退出
+     /api/accounts/*        凭据导入、停用、归档、恢复、删除
+     /api/admin/users/*     管理员用户管理
+     /api/crypto/key        取传输密钥，请求体加解密与签名见下方 crypto 一节
+     /api/logs、/api/log    运行日志列表与原文
+
+   注意：接口清单不在本文件重复维护，改动请以 server.py 为准。
+   ====================================================================== */
 
 const state = {
   data: null,
@@ -217,7 +224,7 @@ function togglePasswordVisibility(button) {
   input.focus();
 }
 
-/* ------------------------------ 登录态 ------------------------------ */
+/* ---- 登录态 ---------------------------------------------------------- */
 
 /* 底栏已移除：正常态不再显示「xx 已登录」这类噪音。
    连不上服务时才提示，直接写到顶栏副标题（状态点会同步变灰）。 */
@@ -272,7 +279,7 @@ function unlock(username, role = "", status = "approved") {
   startLiveMonitor();
 }
 
-/* ------------------------------ 实时同步 ------------------------------ */
+/* ---- 实时同步 -------------------------------------------------------- */
 
 /* 数据指纹：覆盖界面上真正会显示出来的每一个字段。
    刻意**不含** generated_at / 请求时间这类每次都在变的东西 ——
@@ -372,9 +379,9 @@ window.addEventListener("focus", () => {
   if (state.authenticated) syncData().catch(() => {});
 });
 
-/* ------------------------------ 网络 ------------------------------ */
+/* ---- 网络 ------------------------------------------------------------ */
 
-/* ----------------------- 传输层加解密（纯 WebCrypto，无第三方依赖）-------
+/* ---- 传输层加解密（纯 WebCrypto，无第三方依赖） -------------------------
    服务端不支持(旧版)或引导失败时自动退回明文，保证兼容。 */
 let cryptoCtx = {}; // { secret: Uint8Array|null, ready:bool }
 
@@ -589,7 +596,7 @@ async function apiPost(url, payload) {
   return res.data;
 }
 
-/* ------------------------------ 时间工具 ------------------------------ */
+/* ---- 时间工具 -------------------------------------------------------- */
 
 function formatDateTime(value) {
   if (!value) return "-";
@@ -635,7 +642,7 @@ const tone = (sev) => SEVERITY_TONE[statusClass(sev)] || SEVERITY_TONE.neutral;
 
 /* =========================================================================
    账号状态判定（卡片上最该看清的东西）
-   ========================================================================= */
+   ====================================================================== */
 
 function todayState(item) {
   if (item.enabled === false) {
@@ -820,7 +827,7 @@ function accountInfoChips(item) {
   `;
 }
 
-/* ------------------------------ 卡片（新设计）------------------------------ */
+/* ---- 卡片（新设计） -------------------------------------------------- */
 
 function renderAccountCard(item, index = 0) {
   const today = todayState(item);
@@ -904,7 +911,7 @@ function renderAccountCard(item, index = 0) {
   `;
 }
 
-/* ------------------------------ 分组（新设计）------------------------------ */
+/* ---- 分组（新设计） -------------------------------------------------- */
 
 function renderGroup(product) {
   const accounts = (state.data?.accounts || []).filter((item) => item.product === product.key);
@@ -1111,7 +1118,7 @@ function setLiveDot(kind) {
   if (state.watching) dot.classList.add("is-syncing");
 }
 
-/* ------------------------------ 汇总渲染 ------------------------------ */
+/* ---- 汇总渲染 -------------------------------------------------------- */
 
 /* 顶栏那两行小字单独抽出来：内容没变时不走 render()，
    但「更新至 22:41」必须继续往前走 —— 否则看起来像页面卡死了。 */
@@ -1450,10 +1457,10 @@ function renderAdminNotificationsPanel(data) {
   `;
 }
 
-/* ============================================================
+/* =========================================================================
    数据统计（管理员 · 全站）：总览卡 + 注册趋势折线 + 签到效果堆叠柱
    纯 CSS/SVG 绘制，不引入第三方图表库；沿用现有设计令牌。
-   ============================================================ */
+   ====================================================================== */
 function statsLineChart(points) {
   const W = 640, H = 190, PAD = 16;
   const n = points.length;
@@ -1622,7 +1629,7 @@ function renderAdminUsers(rows) {
   `;
 }
 
-/* ------------------------------ 最近记录 ------------------------------ */
+/* ---- 最近记录 -------------------------------------------------------- */
 
 const SEV_PILL = {
   success: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -1632,7 +1639,7 @@ const SEV_PILL = {
 };
 const sevPill = (sev) => SEV_PILL[statusClass(sev)] || SEV_PILL.neutral;
 
-/* ---- 执行记录：日期分组用的小工具 -------------------------------------- */
+/* ---- 执行记录：日期分组用的小工具 ------------------------------------ */
 function startOfDay(value) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return null;
@@ -1776,7 +1783,7 @@ function revealInto(panel, html) {
   panel.classList.add("reveal");
 }
 
-/* ---- 执行日志的结构化渲染 ----------------------------------------------
+/* ---- 执行日志的结构化渲染 -----------------------------------------------
    日志一行就是一次运行：[时间] {JSON}。原样甩 <pre> 的问题是
    一行几百字符只能横向滚，关键信息（结果/报告/积分）全埋在里面。
    所以按行解析：JSON 的字段表格化（key 暗色、value 可换行），解析不了的原样保留。 */
@@ -2004,14 +2011,14 @@ function markNotificationClear(button) {
 
 /* =========================================================================
    抽屉：账号详情 + 设置面板
-   ========================================================================= */
+   ====================================================================== */
 
 function findAccount(name, product) {
   return (state.data?.accounts || []).find((item) => item.name === name && item.product === product) || null;
 }
 
-// kind 必须显式传：以前 openPanel 一律用标题覆盖 state.panel，
-// 于是状态里存的是「时间计划」这种中文标题，refreshActivePanel 没法判断当前是哪一屏。
+// kind 必须显式传：它决定 refreshActivePanel 认出当前是哪一屏。
+// 不要从 title 反推 —— title 是会随时调整的中文文案，不是稳定的标识。
 function openPanel({ title, sub = "", product = "", body = "", kind = "" }) {
   const drawer = $("#drawer");
   const mask = $("#drawerMask");
@@ -2116,10 +2123,10 @@ function openSettings(kind) {
   });
 }
 
-/* ============================================================
+/* =========================================================================
    页面级按需加载：点哪个页面，就只拉那个页面对应的 /api/status/{kind} 子资源，
    合并进 state.data 后只重画该面板，不再每次把全部子端点重发一遍。
-   ============================================================ */
+   ====================================================================== */
 function statusSliceUrl(kind) {
   return kind === "recent" ? "/api/status/recent?limit=80" : `/api/status/${kind}`;
 }
@@ -2444,7 +2451,7 @@ function credentialRefresh(item) {
 
 /* =========================================================================
    导入账号弹窗
-   ========================================================================= */
+   ====================================================================== */
 
 function openUpload(product) {
   const modal = $("#uploadModal");
@@ -2468,7 +2475,7 @@ function closeUpload() {
 
 /* =========================================================================
    时间计划 / 通知（Tailwind 版本）
-   ========================================================================= */
+   ====================================================================== */
 
 function channelLabel(channel) {
   const labels = {
@@ -2750,7 +2757,7 @@ function renderNotifications(data) {
 
 /* =========================================================================
    数据加载
-   ========================================================================= */
+   ====================================================================== */
 
 /* 拉一次 /api/status。
    三个要点，都是为了「异步加载」这件事本身：
@@ -2880,7 +2887,7 @@ async function checkSession() {
 
 /* =========================================================================
    交互
-   ========================================================================= */
+   ====================================================================== */
 
 function setLoginButtonState(button, state) {
   if (!button) return;
@@ -2967,7 +2974,7 @@ function showRegisterForm(show) {
   if (registerForm) registerForm.hidden = !show;
   if (showRegister) showRegister.hidden = !!show;
   resetPasswordToggles(document);
-  setLoginMessage(show ? "提交后等待管理员审核，通过后即可登录。" : "账号与密码由管理员维护，注册后需审核。");
+  setLoginMessage(show ? "注册后可直接登录；同一设备重复注册会转入人工审核。" : "账号与密码由管理员维护。");
   const target = show ? "#registerForm input[name='username']" : "#loginForm input[name='username']";
   window.setTimeout(() => $(target)?.focus(), 80);
 }
@@ -2984,15 +2991,22 @@ async function register(event) {
     return;
   }
   setButtonBusy(button, true, "提交中…");
-  setLoginMessage("正在提交注册申请…", "muted");
+  setLoginMessage("正在创建账号…", "muted");
   try {
     const res = await decryptedFetch("/api/auth/register", { method: "POST", json: data });
     const payload = res.data && typeof res.data === "object" ? res.data : {};
     if (!res.ok) throw new Error(payload.error || `HTTP ${res.status}`);
+    const needsReview = !!payload.needs_review;
     form.reset();
     showRegisterForm(false);
-    setLoginMessage(payload.message || "注册已提交，请等待管理员审核。", "muted");
-    showToast("注册申请已提交");
+    setLoginMessage(
+      payload.message || (needsReview ? "注册已提交，请等待管理员审核。" : "注册成功，现在就可以登录。"),
+      needsReview ? "muted" : "success"
+    );
+    showToast(
+      needsReview ? "注册已提交，等待管理员审核" : "注册成功，请直接登录",
+      needsReview ? "warning" : "success"
+    );
   } catch (error) {
     setLoginMessage(error.message || "注册失败", "danger");
     showToast(`注册失败：${error.message}`);
@@ -3001,8 +3015,9 @@ async function register(event) {
   }
 }
 
-// 浏览器特征指纹：同一浏览器特征只能注册一个账号，用于防「同设备刷号」。
-// 只汇总稳定的环境信号再 SHA-256 摘要，不回传原始指纹。
+// 浏览器特征指纹：只作为**风控参考**上报，不参与服务端的账号唯一性判定。
+// 服务端唯一的设备判据是从请求头自己算出来的指纹（见 server.py 的
+// server_fingerprint）—— 客户端上报的值随时能改，一旦拿它去重就等于没防。
 async function browserFingerprint() {
   const parts = [
     navigator.userAgent || "",
@@ -3222,7 +3237,13 @@ async function handleAdminAction(button) {
   const userId = button.dataset.userId;
   if (action === "delete") {
     const name = button.dataset.userName || "该用户";
-    const ok = window.confirm(`删除用户「${name}」？\n\n会移除登录账号和 SQLite 配置，用户凭据目录会保留。`);
+    const ok = window.confirm(
+      `删除用户「${name}」？\n\n会永久删除，不可恢复：\n` +
+      `· 登录账号与面板配置\n` +
+      `· 工作空间 data/users/u${userId}/（已上传的凭据、日志、归档）\n` +
+      `· 该用户的定时任务与今天的调度触发记录\n\n` +
+      `若该用户正在签到，需等任务结束后才能删除。`
+    );
     if (!ok) return;
   }
   button.disabled = true;
@@ -3236,7 +3257,20 @@ async function handleAdminAction(button) {
       renderAdminUsers(payload.users);
       refreshActivePanel({ force: true });
     }
-    showToast("用户状态已更新");
+    if (action === "delete") {
+      // 后端会把清理结果回报上来：工作区有没有真删掉、清了几条调度残留。
+      // 这些信息不该只躺在服务端日志里 —— 管理员点一下就该知道地盘干净没。
+      const cleanup = (payload.user && payload.user.cleanup) || {};
+      if (cleanup.workspace_removed) {
+        showToast(`用户已删除，工作空间 ${cleanup.workspace || ""} 已一并清理`);
+      } else if (cleanup.workspace) {
+        showToast(`用户已删除，但工作空间 ${cleanup.workspace} 未能删除，请查看服务端日志`);
+      } else {
+        showToast("用户已删除");
+      }
+    } else {
+      showToast("用户状态已更新");
+    }
   } catch (error) {
     button.disabled = false;
     button.textContent = original;
@@ -3245,9 +3279,8 @@ async function handleAdminAction(button) {
 }
 
 async function saveSchedule(event) {
-  // 分发已经在 document 的 submit 委托里做过了（靠字段名区分），这里只认 data-product。
-  // 之前多写了一道 form.matches(".schedule-form") 判断，而渲染出的 form 并没有这个 class
-  // —— 结果是「保存配置」被静默拦死，点了完全没反应。
+  // 事件分发已在 document 的 submit 委托里按字段名完成，这里只认 data-product。
+  // 不要再加类名判断：表单是动态渲染的，类名一变就会把「保存配置」静默拦死。
   const form = event.target.closest("[data-product]");
   if (!form) return;
   event.preventDefault();
@@ -3315,7 +3348,7 @@ async function testNotification(button) {
 
 /* =========================================================================
    绑定
-   ========================================================================= */
+   ====================================================================== */
 
 function on(selector, type, handler) {
   const node = $(selector);
@@ -3465,9 +3498,9 @@ on("#drawerBody", "click", (event) => {
       return;
     }
     if (action === "toggle-account") {
-      // data-next 就是「点完应该变成什么」。之前写的是 data-enabled !== "true"，
-      // 那是「当前状态取反」—— 而 data-enabled 里存的本来就是目标值，
-      // 于是每一下都往反方向搬，必然报「找不到账号凭据」。
+      // data-next 已经是「点完应该变成什么」的目标值，直接采用。
+      // 不要写成 data-enabled !== "true" 这类「当前状态取反」：data-enabled 存的
+      // 本来就是目标值，取反会让每一下都把状态搬向反面。
       handleToggle(product, name, next === "true");
       return;
     }
@@ -3480,7 +3513,7 @@ on("#drawerBody", "click", (event) => {
       return;
     }
     if (action === "run-account") {
-      // 之前这里没带 name，后端只认 product —— 点「只跑这个账号」实际跑的是整个产品。
+      // 必须带上 name：后端按 (product, account) 定位，只传 product 会跑整个产品。
       runNow(product, button, name);
       return;
     }
