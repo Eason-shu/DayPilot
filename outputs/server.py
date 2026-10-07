@@ -3248,7 +3248,7 @@ def purge_no_credential_users() -> int:
     """执行一轮清理，返回删除的账号数。只删：非管理员 + 状态为 pending/approved
     + 注册已超过 grace 小时 + 从未上传过任何凭据。"""
     now = now_local()
-    grace = datetime.timedelta(hours=PURGE_NO_CREDENTIAL_HOURS)
+    grace = timedelta(hours=PURGE_NO_CREDENTIAL_HOURS)
     removed = 0
     for user in list_all_users():
         if str(user.get("role") or "") == "admin":
